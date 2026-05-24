@@ -29,15 +29,15 @@ Documentação do projeto **aws-ia-regressao**: template de automação AWS com 
 - Grava métricas, feature importance e predições no **S3**
 - Registra tabela no **Glue Data Catalog** para consulta no **Athena**
 - Orquestra o fluxo com **Step Functions** (check → validate → Glue → finalize)
-- **Ingesta dados simulados a cada 10 minutos** (micro-lotes) e detecta CSVs em `incoming/`
-- Agenda retreino com **EventBridge** (`rate(10 minutes)` em prod)
+- **Ingesta dados simulados a cada 1 minuto** (micro-lotes) e detecta CSVs em `incoming/`
+- Agenda retreino com **EventBridge** (`rate(1 minute)` em prod)
 - Persiste histórico de execuções no **DynamoDB** e métricas por run no **Athena** (`tb_metricas_treino`)
 
 ### Arquitetura (prod)
 
 ```mermaid
 flowchart TB
-  EB[EventBridge 10min]
+  EB[EventBridge 1min]
   SFN[Step Functions]
   L0[Lambda check_new_data]
   L1[Lambda validate]
@@ -67,7 +67,7 @@ flowchart TB
 | Glue Database | `saldo_previsto_db_prod` |
 | Glue/Athena Table (predições) | `tb_saldo_previsto_prod` |
 | Glue/Athena Table (métricas) | `tb_metricas_treino` |
-| EventBridge Rule | `saldo-previsto-schedule-prod` (`rate(10 minutes)`) |
+| EventBridge Rule | `saldo-previsto-schedule-prod` (`rate(1 minute)`) |
 
 ---
 
@@ -318,7 +318,7 @@ aws stepfunctions list-executions `
 
 Fluxo esperado: **CheckNewData → HasNewData → ValidateInput → RunGlueJob → FinalizeRun → SUCCEEDED**
 
-Se não houver CSV em `incoming/` e o intervalo de 10 min ainda não passou: **CheckNewData → SkipNoNewData → SUCCEEDED** (sem treino).
+Se não houver CSV em `incoming/` e o intervalo de 1 min ainda não passou: **CheckNewData → SkipNoNewData → SUCCEEDED** (sem treino).
 
 ### 6.4 Teste — DynamoDB (histórico de runs)
 
@@ -333,7 +333,7 @@ aws events describe-rule --name saldo-previsto-schedule-prod
 aws events list-targets-by-rule --rule saldo-previsto-schedule-prod
 ```
 
-Estado esperado: `"State": "ENABLED"`, `"ScheduleExpression": "rate(10 minutes)"`, target = Step Functions.
+Estado esperado: `"State": "ENABLED"`, `"ScheduleExpression": "rate(1 minute)"`, target = Step Functions.
 
 ### 6.6 Checklist de validação
 
@@ -346,7 +346,7 @@ Estado esperado: `"State": "ENABLED"`, `"ScheduleExpression": "rate(10 minutes)"
 | 5 | SFN SUCCEEDED | Console Step Functions |
 | 6 | Partições no catálogo | `aws glue get-partitions --database-name saldo_previsto_db_prod --table-name tb_saldo_previsto_prod --query length(Partitions)` |
 | 7 | Query Athena retorna linhas | Ver seção 7 |
-| 8 | Métricas por run (10 min) | Query em `tb_metricas_treino` (seção 7) |
+| 8 | Métricas por run (1 min) | Query em `tb_metricas_treino` (seção 7) |
 
 ---
 
@@ -404,23 +404,23 @@ LIMIT 20;
 
 ## 8. Agendamento e ingestão (EventBridge)
 
-### Configuração atual em prod (micro — 10 minutos)
+### Configuração atual em prod (micro — 1 minuto)
 
-O pipeline em produção **não usa ingestão diária**. A cada **10 minutos** o EventBridge dispara o Step Functions; se houver lote simulado pendente ou CSV em `incoming/`, o Glue ingere um micro-lote (+10 min na última data) e retreina.
+O pipeline em produção **não usa ingestão diária**. A cada **1 minuto** o EventBridge dispara o Step Functions; se houver lote simulado pendente ou CSV em `incoming/`, o Glue ingere um micro-lote (+1 min na última data) e retreina.
 
 ```hcl
 enable_eventbridge_schedule     = true
-eventbridge_schedule_expression = "rate(10 minutes)"
+eventbridge_schedule_expression = "rate(1 minute)"
 ml_ingest_daily_simulated       = true
 ml_ingest_mode                  = "micro"
-ml_incremental_step_minutes     = 10
+ml_incremental_step_minutes     = 1
 ml_enable_check_new_data        = true
 glue_max_concurrent_runs        = 1
 ```
 
 Fluxo Step Functions (`pipeline-ml.asl.json.tpl`):
 
-1. Lambda `check_new_data` — arquivos novos em `incoming/` **ou** lote simulado com ≥10 min desde o último
+1. Lambda `check_new_data` — arquivos novos em `incoming/` **ou** lote simulado com ≥1 min desde o último
 2. Se não houver dados → encerra (`SkipNoNewData`)
 3. Se houver → valida → Glue (passa `--INCOMING_KEYS`) → finaliza (atualiza watermark)
 

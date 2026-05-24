@@ -45,7 +45,7 @@ FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE segmento = 'VAREJO'
 LIMIT 20;
 
--- Evolução por retreino (ingestão micro a cada 10 min)
+-- Evolução por retreino (ingestão micro a cada 1 min)
 SELECT run_date, run_id, total_linhas, linhas_adicionadas,
        data_referencia_lote,
        ROUND(rmse, 2) AS rmse,

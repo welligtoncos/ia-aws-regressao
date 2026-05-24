@@ -1,6 +1,6 @@
 # AWS IA Regressão — Saldo Previsto
 
-Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 10 minutos** em produção.
+Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 1 minuto** em produção.
 
 ## Proposta de valor
 
@@ -8,7 +8,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 
 | Para quem | Entrega |
 |-----------|---------|
-| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **10 min**, métricas e feature importance no S3 |
+| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **1 min**, métricas e feature importance no S3 |
 | **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
 | **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions |
 
@@ -57,28 +57,28 @@ ORDER BY treinado_em;
 aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
 ```
 
-Com o EventBridge ativo (`rate(10 minutes)`), a cada ciclo com dados novos o pipeline gera uma nova `modelo_versao` — as queries acima formam a **série temporal de qualidade do modelo**.
+Com o EventBridge ativo (`rate(1 minute)`), a cada ciclo com dados novos o pipeline gera uma nova `modelo_versao` — as queries acima formam a **série temporal de qualidade do modelo**.
 
-### Ingestão incremental (prod — a cada 10 minutos)
+### Ingestão incremental (prod — a cada 1 minuto)
 
 Configuração atual em `infra/inventories/prod/terraform.tfvars`:
 
 ```hcl
-eventbridge_schedule_expression = "rate(10 minutes)"
+eventbridge_schedule_expression = "rate(1 minute)"
 ml_ingest_mode                  = "micro"
-ml_incremental_step_minutes     = 10
+ml_incremental_step_minutes     = 1
 ml_ingest_daily_simulated       = true
 ml_enable_check_new_data        = true
 ```
 
 Fluxo:
 
-1. **EventBridge** dispara o Step Functions a cada **10 minutos**
+1. **EventBridge** dispara o Step Functions a cada **1 minuto**
 2. **Lambda `check_new_data`** verifica:
    - CSVs novos em `s3://saldo-previsto-data-prod/incoming/` (ETag vs watermark DynamoDB)
-   - Se passou o intervalo de **10 min** desde o último lote simulado
+   - Se passou o intervalo de **1 min** desde o último lote simulado
 3. Se **não há dados novos**, encerra sem treinar (`SkipNoNewData`)
-4. Se há dados, o **Glue** faz append de um **micro-lote** (+10 min na última `data_referencia`, ~2 clientes novos por lote) e/ou merge de CSVs em `incoming/`
+4. Se há dados, o **Glue** faz append de um **micro-lote** (+1 min na última `data_referencia`, ~2 clientes novos por lote) e/ou merge de CSVs em `incoming/`
 5. Retreina com split **temporal** e grava métricas em `tb_metricas_treino`
 6. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas
 
@@ -88,10 +88,10 @@ Enviar CSV externo:
 aws s3 cp meu_lote.csv s3://saldo-previsto-data-prod/incoming/meu_lote.csv
 ```
 
-O próximo ciclo (≤10 min) detecta o arquivo, treina e marca o ETag no DynamoDB (`__ingest_watermark__`).
+O próximo ciclo (≤1 min) detecta o arquivo, treina e marca o ETag no DynamoDB (`__ingest_watermark__`).
 
 ```sql
--- Evolução do modelo a cada retreino (micro-lotes de 10 min)
+-- Evolução do modelo a cada retreino (micro-lotes de 1 min)
 SELECT run_date, run_id, total_linhas, linhas_adicionadas,
        ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape, modelo_versao
 FROM saldo_previsto_db_prod.tb_metricas_treino
@@ -154,7 +154,7 @@ aws stepfunctions start-execution `
 
 ```mermaid
 flowchart LR
-  EB[EventBridge 10min]
+  EB[EventBridge 1min]
   SFN[Step Functions]
   L1[Lambda check/validate]
   G[Glue XGBoost]
@@ -198,7 +198,7 @@ Para **parar só a ingestão simulada** (pipeline só treina com CSV em `incomin
 ml_ingest_daily_simulated = false
 ```
 
-Nesse caso o EventBridge continua disparando a cada 10 min, mas encerra em `SkipNoNewData` até chegar arquivo em `incoming/`.
+Nesse caso o EventBridge continua disparando a cada 1 min, mas encerra em `SkipNoNewData` até chegar arquivo em `incoming/`.
 
 Para **religar**:
 
@@ -249,7 +249,7 @@ docs/              # Documentação
 | Athena DB | `saldo_previsto_db_prod` |
 | Athena Table (predições) | `tb_saldo_previsto_prod` |
 | Athena Table (métricas) | `tb_metricas_treino` |
-| EventBridge | `saldo-previsto-schedule-prod` (`rate(10 minutes)`) |
+| EventBridge | `saldo-previsto-schedule-prod` (`rate(1 minute)`) |
 
 Consulta Athena:
 
