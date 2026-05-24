@@ -28,6 +28,7 @@ def save_metrics_history(metricas, meta, bucket, table, database, region="us-eas
         "champion_modelo_versao": meta.get("champion_modelo_versao") or "",
         "champion_rmse": float(meta.get("champion_rmse") or 0),
         "champion_wape": float(meta.get("champion_wape") or 0),
+        "champion_mape": float(meta.get("champion_mape") or 0),
         "metricas_segmento": json.dumps(meta.get("metricas_segmento") or {}, ensure_ascii=False),
     }
     df = pd.DataFrame([row])

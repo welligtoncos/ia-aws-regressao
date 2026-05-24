@@ -36,7 +36,9 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 | **S3** `feature_importance.json` | Importância das variáveis | Auditoria de features |
 | **DynamoDB** `saldo-previsto-results-prod` | Status validate → Glue → finalize | Operação |
 
-Queries completas (WAPE, parse de `metricas_segmento`, slots de 15 min): [`payloads/athena_queries.sql`](payloads/athena_queries.sql).
+Queries completas: [`payloads/athena_queries.sql`](payloads/athena_queries.sql).
+
+**Erro `COLUMN_NOT_FOUND: metricas_segmento`?** O catálogo Athena em prod ainda não tem as colunas novas. Execute uma vez [`payloads/athena_migrate_tb_metricas_treino.sql`](payloads/athena_migrate_tb_metricas_treino.sql) no console Athena (ou `terraform apply`), depois rode um retreino com o Glue atualizado.
 
 ### Model registry (champion)
 

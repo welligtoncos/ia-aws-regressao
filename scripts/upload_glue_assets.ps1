@@ -1,6 +1,6 @@
 # Upload bundle flat para AWS Glue Python Shell
 param(
-    [string]$Bucket = "sample-data-dev",
+    [string]$Bucket = "saldo-previsto-data-prod",
     [string]$Region = "us-east-1"
 )
 
@@ -11,10 +11,13 @@ $ZipPath = Join-Path $env:TEMP "glue-libs.zip"
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
 
 Write-Host "==> Empacotando glue_bundle (flat)..."
-Compress-Archive -Path "glue_bundle/train_pipeline.py","glue_bundle/preprocessor.py","glue_bundle/model.py","glue_bundle/catalog_sync.py","glue_bundle/incremental_data.py","glue_bundle/metrics_history.py","glue_bundle/model_registry.py" -DestinationPath $ZipPath -Force
+$bundleFiles = Get-ChildItem "glue_bundle\*.py" | Where-Object { $_.Name -ne "glue_train.py" }
+if (-not $bundleFiles) { throw "Nenhum arquivo em glue_bundle/" }
+Compress-Archive -Path $bundleFiles.FullName -DestinationPath $ZipPath -Force
 aws s3 cp $ZipPath "s3://$Bucket/libs/app.zip" --region $Region
 
 Write-Host "==> Enviando glue_train.py..."
 aws s3 cp "glue_bundle/glue_train.py" "s3://$Bucket/scripts/glue_train.py" --region $Region
 
-Write-Host "Concluido. Disparar: aws glue start-job-run --job-name saldo-previsto-glue-job-prod"
+Write-Host "Concluido: s3://$Bucket/libs/app.zip"
+Write-Host "Disparar: aws glue start-job-run --job-name saldo-previsto-glue-job-prod --region $Region"

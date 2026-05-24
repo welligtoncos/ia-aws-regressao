@@ -1,8 +1,9 @@
 -- Athena: Settings -> Query result location = s3://saldo-previsto-data-prod/athena-results/
 -- Database: saldo_previsto_db_prod
 --
--- Nota: colunas wape, smape, metricas_segmento e champion_wape existem apos apply Terraform
---       e novos retreinos (rate 15 min). Runs antigos podem ter NULL nessas colunas.
+-- PREREQUISITO (COLUMN_NOT_FOUND em metricas_segmento ou wape):
+--   Execute: payloads/athena_migrate_tb_metricas_treino.sql
+--   Ou terraform apply + retreino Glue atualizado. Particoes antigas: NULL nessas colunas.
 
 -- =============================================================================
 -- Predicoes (tb_saldo_previsto_prod)
@@ -117,7 +118,23 @@ ORDER BY dt_processamento DESC
 LIMIT 1;
 
 -- =============================================================================
+-- FALLBACK: WAPE por segmento SEM metricas_segmento (so tb_saldo_previsto_prod)
+-- Use se a migracao ainda nao foi aplicada ou particoes antigas estao vazias.
+-- =============================================================================
+SELECT segmento,
+       COUNT(*) AS registros,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(AVG(erro_percentual), 2) AS mape_diag
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+WHERE dt_processamento >= (
+  SELECT max(dt_processamento) FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+)
+GROUP BY segmento
+ORDER BY wape_pct DESC;
+
+-- =============================================================================
 -- metricas_segmento (JSON gravado no holdout de teste por run)
+-- Requer ALTER TABLE / terraform — ver athena_migrate_tb_metricas_treino.sql
 -- Formato: {"VAREJO":{"rmse":...,"wape":...,"mape":...}, "PRIME":{...}, ...}
 -- =============================================================================
 

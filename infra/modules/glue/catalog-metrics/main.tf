@@ -82,6 +82,10 @@ resource "aws_glue_catalog_table" "this" {
       name = "champion_wape"
       type = "double"
     }
+    columns {
+      name = "champion_mape"
+      type = "double"
+    }
   }
 
   partition_keys {
