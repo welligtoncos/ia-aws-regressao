@@ -2,6 +2,7 @@
 -- Database: saldo_previsto_db_prod
 --
 -- Guia passo a passo (Rafo044, reconcile, interpretacao): docs/ANALISE_METRICAS_ATHENA.md
+-- Benchmark (1 linha, modelo champion): secao "Benchmark do modelo" abaixo; docs/ANALISE_METRICAS_ATHENA.md#query-de-benchmark
 -- Relatorios locais: python scripts/run_rafo044_experiment.py --export-reports
 --
 -- PREREQUISITO metricas: payloads/athena_migrate_tb_metricas_treino.sql
@@ -178,6 +179,55 @@ FROM saldo_previsto_db_prod.tb_metricas_treino
 WHERE is_champion = true
 ORDER BY dt_processamento DESC
 LIMIT 1;
+
+-- =============================================================================
+-- Benchmark do modelo (1 linha) — servidor Athena / dashboard / comparacao entre runs
+-- Documentacao: docs/ANALISE_METRICAS_ATHENA.md#query-de-benchmark
+-- Retorna: metricas globais do champion + gabarito agregado + WAPE por segmento + baselines
+-- Sem champion: troque WHERE is_champion = true por ORDER BY dt_processamento DESC LIMIT 1
+-- =============================================================================
+WITH champion AS (
+  SELECT *
+  FROM saldo_previsto_db_prod.tb_metricas_treino
+  WHERE is_champion = true
+  ORDER BY dt_processamento DESC
+  LIMIT 1
+),
+gabarito AS (
+  SELECT
+    COUNT(*) AS registros_holdout,
+    COUNT(DISTINCT cliente_id) AS clientes,
+    ROUND(100.0 * SUM(p.erro_absoluto)
+      / NULLIF(SUM(ABS(COALESCE(p.saldo_realizado, p.saldo_real))), 0), 2) AS wape_pct,
+    ROUND(AVG(p.erro_absoluto), 2) AS mae,
+    ROUND(AVG(COALESCE(p.saldo_predito, p.saldo_previsto)
+      - COALESCE(p.saldo_realizado, p.saldo_real)), 2) AS vies_medio
+  FROM saldo_previsto_db_prod.tb_saldo_previsto_prod p
+  INNER JOIN champion c ON p.modelo_versao = c.modelo_versao
+)
+SELECT
+  c.run_id,
+  c.modelo_versao,
+  c.dt_processamento,
+  c.total_linhas AS linhas_treino,
+  ROUND(c.rmse, 2) AS rmse,
+  ROUND(c.mae, 2) AS mae,
+  ROUND(c.wape, 2) AS wape,
+  ROUND(c.r2, 4) AS r2,
+  g.registros_holdout,
+  g.clientes,
+  g.wape_pct AS wape_gabarito,
+  g.mae AS mae_gabarito,
+  g.vies_medio,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.VAREJO.wape') AS double), 2) AS wape_varejo,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.PRIME.wape') AS double), 2) AS wape_prime,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.PRIVATE.wape') AS double), 2) AS wape_private,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.naive_wape') AS double), 2) AS baseline_naive_wape,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.media_saldos_wape') AS double), 2) AS baseline_media_saldos_wape,
+  CAST(json_extract_scalar(c.metricas_baseline, '$.beats_naive') AS boolean) AS beats_naive,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.wape_gain_vs_naive_pp') AS double), 2) AS ganho_pp_vs_naive
+FROM champion c
+CROSS JOIN gabarito g;
 
 -- =============================================================================
 -- FALLBACK: WAPE por segmento SEM metricas_segmento (so tb_saldo_previsto_prod)

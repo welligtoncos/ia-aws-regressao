@@ -16,6 +16,107 @@ Guia para interpretar retreinos após `run_rafo044_experiment.py` (incluindo `--
 
 Queries prontas: [`payloads/athena_queries.sql`](../payloads/athena_queries.sql).
 
+**Benchmark (1 linha):** use a [query de benchmark](#query-de-benchmark) para comparar o modelo em produção (dashboard, relatório agendado ou outro ambiente).
+
+---
+
+## Query de benchmark
+
+Consulta **única** que resume o **modelo champion atual** como um todo: métricas globais do holdout de teste, conferência nas predições gravadas, WAPE por segmento e baselines (quando o Glue já gravou `metricas_baseline`).
+
+| Uso | Como |
+|-----|------|
+| Console Athena | Cole a query abaixo; database `saldo_previsto_db_prod` |
+| Servidor / BI | Salve como query nomeada ou agende (ex. QuickSight, Grafana Athena plugin) |
+| Comparar ambientes | Rode a mesma SQL em `*_prod` vs `*_dev` e compare `wape`, `r2`, `beats_naive` |
+| Após retreino | `wape` deve estar próximo de `wape_gabarito` (mesma fórmula, fontes diferentes) |
+
+**Fonte canônica no repositório:** [`payloads/athena_queries.sql`](../payloads/athena_queries.sql) — seção *Benchmark do modelo*.
+
+### SQL
+
+```sql
+WITH champion AS (
+  SELECT *
+  FROM saldo_previsto_db_prod.tb_metricas_treino
+  WHERE is_champion = true
+  ORDER BY dt_processamento DESC
+  LIMIT 1
+),
+gabarito AS (
+  SELECT
+    COUNT(*) AS registros_holdout,
+    COUNT(DISTINCT cliente_id) AS clientes,
+    ROUND(100.0 * SUM(p.erro_absoluto)
+      / NULLIF(SUM(ABS(COALESCE(p.saldo_realizado, p.saldo_real))), 0), 2) AS wape_pct,
+    ROUND(AVG(p.erro_absoluto), 2) AS mae,
+    ROUND(AVG(COALESCE(p.saldo_predito, p.saldo_previsto)
+      - COALESCE(p.saldo_realizado, p.saldo_real)), 2) AS vies_medio
+  FROM saldo_previsto_db_prod.tb_saldo_previsto_prod p
+  INNER JOIN champion c ON p.modelo_versao = c.modelo_versao
+)
+SELECT
+  c.run_id,
+  c.modelo_versao,
+  c.dt_processamento,
+  c.total_linhas AS linhas_treino,
+  ROUND(c.rmse, 2) AS rmse,
+  ROUND(c.mae, 2) AS mae,
+  ROUND(c.wape, 2) AS wape,
+  ROUND(c.r2, 4) AS r2,
+  g.registros_holdout,
+  g.clientes,
+  g.wape_pct AS wape_gabarito,
+  g.mae AS mae_gabarito,
+  g.vies_medio,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.VAREJO.wape') AS double), 2) AS wape_varejo,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.PRIME.wape') AS double), 2) AS wape_prime,
+  ROUND(CAST(json_extract_scalar(c.metricas_segmento, '$.PRIVATE.wape') AS double), 2) AS wape_private,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.naive_wape') AS double), 2) AS baseline_naive_wape,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.media_saldos_wape') AS double), 2) AS baseline_media_saldos_wape,
+  CAST(json_extract_scalar(c.metricas_baseline, '$.beats_naive') AS boolean) AS beats_naive,
+  ROUND(CAST(json_extract_scalar(c.metricas_baseline, '$.wape_gain_vs_naive_pp') AS double), 2) AS ganho_pp_vs_naive
+FROM champion c
+CROSS JOIN gabarito g;
+```
+
+### Colunas de saída (1 linha)
+
+| Coluna | Origem | Significado |
+|--------|--------|-------------|
+| `run_id`, `modelo_versao`, `dt_processamento` | `tb_metricas_treino` | Identificação do retreino que promoveu o champion |
+| `linhas_treino` | `total_linhas` | Volume do CSV de treino usado naquele run |
+| `rmse`, `mae`, `wape`, `r2` | Holdout global (Glue) | **Benchmark principal** — mesmo cálculo do treino |
+| `registros_holdout`, `clientes` | `tb_saldo_previsto_prod` | Tamanho do conjunto de teste publicado |
+| `wape_gabarito`, `mae_gabarito` | Agregação nas predições | Conferência; deve aproximar `wape` / `mae` |
+| `vies_medio` | Predito − realizado (média) | Negativo = modelo tende a superestimar saldo |
+| `wape_varejo`, `wape_prime`, `wape_private` | JSON `metricas_segmento` | Erro por segmento no holdout |
+| `baseline_*`, `beats_naive`, `ganho_pp_vs_naive` | JSON `metricas_baseline` | Comparação com naive e média m1–m6; `NULL` até migrate + retreino novo |
+
+### Referência (Rafo044 completo em prod)
+
+| Campo | Valor esperado (ordem de grandeza) |
+|-------|-------------------------------------|
+| `linhas_treino` | ~12.168 (7 meses × ~2.000 clientes) |
+| `wape` / `wape_gabarito` | ~**20,45%** |
+| `r2` | ~**0,845** |
+| `wape_*` por segmento | ~19–21% |
+| `beats_naive` | `true` após baselines no Glue |
+
+Champion validado: `rafo044-20260524182148` · `xgb-saldo-v1-460f98ec`.
+
+### Sem linha de resultado
+
+| Causa | Ação |
+|-------|------|
+| Nenhum `is_champion = true` ainda | No CTE `champion`, use `ORDER BY dt_processamento DESC LIMIT 1` (último retreino) |
+| `wape_gabarito` nulo | Sem predições para o `modelo_versao` do champion — conferir parquets em `processed/tb_saldo_previsto_prod/` |
+| Baselines `NULL` | Rodar [`athena_migrate_tb_metricas_treino.sql`](../payloads/athena_migrate_tb_metricas_treino.sql) + `upload_glue_assets` + retreino |
+
+### Alternativa: diagnóstico multi-linha
+
+Para auditoria operacional (últimos retreinos + gabarito por mês + segmento), use a query *Diagnóstico completo* no final de [`athena_queries.sql`](../payloads/athena_queries.sql) — não substitui o benchmark de 1 linha em dashboards.
+
 ---
 
 ## Duas tabelas
