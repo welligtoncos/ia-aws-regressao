@@ -10,6 +10,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 |-----------|---------|
 | **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), métricas (RMSE, WAPE, por segmento) e feature importance no S3; retreino agendável via EventBridge ou sob demanda |
 | **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
+| **Produto / estratégia** | Casos de uso reais (tesouraria, crédito, CRM) e roadmap de escala — **[docs/USO_REAL_E_ESCALABILIDADE.md](docs/USO_REAL_E_ESCALABILIDADE.md)** |
 | **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions — diagrama: **[docs/FLUXO_TREINAMENTO_AWS.md](docs/FLUXO_TREINAMENTO_AWS.md)** |
 
 ### Insight principal
@@ -154,6 +155,12 @@ LIMIT 30;
 Com EventBridge **habilitado** (`enable_eventbridge_schedule = true`), há tentativa de pipeline na cadência configurada (ex. `rate(2 minutes)`); linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`). Com o schedule **desligado** (estado atual em prod), use `--export-reports` ou Athena após cada treino manual.
 
 **Interpretação rápida:** prefira **WAPE** para conclusões; use **RMSE** para comparar runs; **MAPE**/`erro_percentual` só como diagnóstico. Guia completo (pós-reconcile, troubleshooting): [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
+
+### Uso em produção real e escalabilidade
+
+Casos de uso (tesouraria, crédito, CRM, cobrança), diagramas de integração com data lake e roadmap POC → escala:
+
+**[docs/USO_REAL_E_ESCALABILIDADE.md](docs/USO_REAL_E_ESCALABILIDADE.md)**
 
 ### Treinamento e serviços AWS
 
@@ -404,7 +411,7 @@ workloads/shared/     # incremental_data, model_registry, target
 infra/                # Terraform
 scripts/              # Deploy e generate_dataset
 payloads/             # SFN input + athena_queries.sql
-docs/                 # GUIA_INSTALACAO, DATA_MODEL, FLUXO_TREINAMENTO_AWS, ANALISE_METRICAS_ATHENA
+docs/                 # GUIA_INSTALACAO, DATA_MODEL, FLUXO_TREINAMENTO_AWS, USO_REAL_E_ESCALABILIDADE, ANALISE_METRICAS_ATHENA
 ```
 
 ## Comandos

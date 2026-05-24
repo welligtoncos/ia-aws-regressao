@@ -190,6 +190,7 @@ Queries: [`payloads/athena_queries.sql`](../payloads/athena_queries.sql) · Guia
 
 ## Referências
 
+- Casos de uso e escala em produção real: [`USO_REAL_E_ESCALABILIDADE.md`](USO_REAL_E_ESCALABILIDADE.md)
 - ASL do pipeline: [`infra/templates/stepfunctions/pipeline-ml.asl.json.tpl`](../infra/templates/stepfunctions/pipeline-ml.asl.json.tpl)
 - Código do treino: [`glue_bundle/train_pipeline.py`](../glue_bundle/train_pipeline.py)
 - Experimento local: [`scripts/run_rafo044_experiment.py`](../scripts/run_rafo044_experiment.py)
