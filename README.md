@@ -1,6 +1,6 @@
 # AWS IA Regressão — Saldo Previsto
 
-Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 15 minutos** em produção (configurável).
+Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 2 minutos** em produção (configurável).
 
 ## Proposta de valor
 
@@ -8,7 +8,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 
 | Para quem | Entrega |
 |-----------|---------|
-| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **15 min**, métricas (RMSE, WAPE, por segmento) e feature importance no S3 |
+| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **2 min**, métricas (RMSE, WAPE, por segmento) e feature importance no S3 |
 | **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
 | **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions |
 
@@ -138,25 +138,25 @@ ORDER BY dt_processamento DESC
 LIMIT 30;
 ```
 
-Com EventBridge em `rate(15 minutes)`, há tentativa de pipeline a cada 15 min; linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`).
+Com EventBridge em `rate(2 minutes)`, há tentativa de pipeline a cada 2 min; linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`).
 
-### Ingestão incremental (prod — a cada 15 minutos)
+### Ingestão incremental (prod — a cada 2 minutos)
 
 Configuração em `infra/inventories/prod/terraform.tfvars`:
 
 ```hcl
-eventbridge_schedule_expression = "rate(15 minutes)"
+eventbridge_schedule_expression = "rate(2 minutes)"
 ml_ingest_mode                  = "micro"
-ml_incremental_step_minutes     = 15
+ml_incremental_step_minutes     = 2
 ml_ingest_daily_simulated       = true
 ml_enable_check_new_data        = true
 ```
 
 Fluxo:
 
-1. **EventBridge** dispara o Step Functions a cada **15 minutos**
+1. **EventBridge** dispara o Step Functions a cada **2 minutos**
 2. **Step Functions** define `run_id` = nome da execução
-3. **Lambda `check_new_data`**: CSVs novos em `incoming/` (ETag vs watermark) **ou** intervalo de **15 min** desde o último lote simulado
+3. **Lambda `check_new_data`**: CSVs novos em `incoming/` (ETag vs watermark) **ou** intervalo de **2 min** desde o último lote simulado
 4. Sem dados novos → `SkipNoNewData`
 5. Com dados → **Glue** append de micro-lote (+15 min na última `data_referencia`, ~2 clientes novos) e/ou merge de `incoming/`
 6. **Pré-processamento**: alvo = saldo do período seguinte; split temporal treino/val/teste
@@ -259,7 +259,7 @@ Parar só ingestão simulada (treina só com `incoming/`):
 ml_ingest_daily_simulated = false
 ```
 
-O EventBridge continua em 15 min, mas encerra em `SkipNoNewData` até haver CSV em `incoming/`.
+O EventBridge continua em 2 min, mas encerra em `SkipNoNewData` até haver CSV em `incoming/`.
 
 **Religar:**
 
@@ -308,7 +308,7 @@ docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md
 | Athena DB | `saldo_previsto_db_prod` |
 | Predições | `tb_saldo_previsto_prod` |
 | Métricas treino | `tb_metricas_treino` |
-| EventBridge | `saldo-previsto-schedule-prod` (`rate(15 minutes)`) |
+| EventBridge | `saldo-previsto-schedule-prod` (`rate(2 minutes)`) |
 | Champion | `models/xgboost_saldo/champion/model.ubj` |
 
 ## Licença / uso
