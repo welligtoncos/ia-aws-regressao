@@ -47,7 +47,7 @@ Glossário completo (tabelas, colunas, `is_champion`): **[docs/DATA_MODEL.md](do
 | **S3** `feature_importance.json` | Importância das variáveis | Auditoria de features |
 | **DynamoDB** `saldo-previsto-results-prod` | Status validate → Glue → finalize | Operação |
 
-Queries completas: [`payloads/athena_queries.sql`](payloads/athena_queries.sql). Guia de análise: [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
+Queries completas: [`payloads/athena_queries.sql`](payloads/athena_queries.sql). Guia de análise: [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md) (inclui **validação em prod**: WAPE ~20% após reconcile, evidência no Athena).
 
 **Erro `COLUMN_NOT_FOUND: metricas_segmento`?** O catálogo Athena em prod ainda não tem as colunas novas. Execute uma vez [`payloads/athena_migrate_tb_metricas_treino.sql`](payloads/athena_migrate_tb_metricas_treino.sql) no console Athena (ou `terraform apply`), depois rode um retreino com o Glue atualizado.
 

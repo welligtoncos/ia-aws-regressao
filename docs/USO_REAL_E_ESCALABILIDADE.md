@@ -289,6 +289,22 @@ sequenceDiagram
 
 ---
 
+## Evidência de validação (prod, Rafo044)
+
+Resultados medidos no Athena após `run_rafo044_experiment.py --reconcile --upload` (maio/2026):
+
+| Indicador | Resultado |
+|-----------|-----------|
+| Linhas de treino | **12.168** (7 meses, ~2k clientes) |
+| WAPE global (holdout) | **~20,45%** (vs ~79% no pipeline legado) |
+| R² | **~0,845** |
+| WAPE por segmento | PRIVATE **19,7%** · VAREJO **20,3%** · PRIME **20,9%** |
+| Gabarito SQL | Estável **~17–25%** WAPE por mês/segmento (jun–dez/2015) |
+
+Detalhes, tabelas e query de reprodução: **[ANALISE_METRICAS_ATHENA.md](ANALISE_METRICAS_ATHENA.md)** — seção *Validação em produção (prova de que funciona)*.
+
+---
+
 ## Métricas de sucesso em produção (não só acurácia)
 
 | KPI | Fonte | Por que importa na vida real |

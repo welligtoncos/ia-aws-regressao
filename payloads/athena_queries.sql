@@ -327,3 +327,53 @@ FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE from_iso8601_timestamp(dt_processamento) >= current_timestamp - interval '6' hour
 GROUP BY 1
 ORDER BY slot_15m DESC;
+
+-- =============================================================================
+-- Diagnostico completo (retreinos + gabarito + segmento) — ver docs/ANALISE_METRICAS_ATHENA.md
+-- Validacao prod 2026-05: reconcile 12168 linhas, WAPE ~20.45%, R2 ~0.845
+-- =============================================================================
+WITH retreinos AS (
+  SELECT dt_processamento, run_id, total_linhas, linhas_adicionadas,
+         ROUND(rmse, 2) AS rmse, ROUND(wape, 2) AS wape, ROUND(r2, 4) AS r2,
+         modelo_versao, is_champion, champion_modelo_versao,
+         ROUND(champion_wape, 2) AS champion_wape
+  FROM saldo_previsto_db_prod.tb_metricas_treino
+  ORDER BY dt_processamento DESC
+  LIMIT 15
+),
+gabarito AS (
+  SELECT CAST(ano AS VARCHAR) || '-' || LPAD(CAST(mes AS VARCHAR), 2, '0') AS periodo,
+         segmento, COUNT(*) AS registros,
+         ROUND(AVG(COALESCE(saldo_predito, saldo_previsto)), 2) AS media_predito,
+         ROUND(AVG(COALESCE(saldo_realizado, saldo_real)), 2) AS media_gabarito,
+         ROUND(100.0 * SUM(erro_absoluto)
+           / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct
+  FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+  GROUP BY ano, mes, segmento
+),
+por_segmento_ultimo AS (
+  SELECT p.segmento, COUNT(*) AS registros,
+         ROUND(100.0 * SUM(p.erro_absoluto)
+           / NULLIF(SUM(ABS(COALESCE(p.saldo_realizado, p.saldo_real))), 0), 2) AS wape_pct
+  FROM saldo_previsto_db_prod.tb_saldo_previsto_prod p
+  WHERE p.dt_processamento = (
+    SELECT max(dt_processamento) FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+  )
+  GROUP BY p.segmento
+)
+SELECT 'RETREINO' AS tipo, CAST(dt_processamento AS VARCHAR) AS col1, run_id AS col2,
+       CAST(total_linhas AS VARCHAR) AS col3, CAST(linhas_adicionadas AS VARCHAR) AS col4,
+       CAST(wape AS VARCHAR) AS col5, CAST(rmse AS VARCHAR) AS col6, CAST(r2 AS VARCHAR) AS col7,
+       modelo_versao AS col8, CAST(is_champion AS VARCHAR) AS col9,
+       COALESCE(champion_modelo_versao, '-') AS col10, COALESCE(CAST(champion_wape AS VARCHAR), '-') AS col11
+FROM retreinos
+UNION ALL
+SELECT 'GABARITO_MES', periodo, segmento, CAST(registros AS VARCHAR),
+       CAST(media_predito AS VARCHAR), CAST(media_gabarito AS VARCHAR), CAST(wape_pct AS VARCHAR),
+       '-', '-', '-', '-', '-'
+FROM gabarito
+UNION ALL
+SELECT 'SEG_ULTIMO_PROC', segmento, CAST(registros AS VARCHAR), CAST(wape_pct AS VARCHAR),
+       '-', '-', '-', '-', '-', '-', '-', '-'
+FROM por_segmento_ultimo
+ORDER BY tipo, col1 DESC;
