@@ -149,3 +149,4 @@ Runs com métricas vazadas (R² ~1) podem ter `is_champion = true`; runs honesto
 | `workloads/shared/target.py` | `prepare_training_dataset`, split temporal |
 | `glue_bundle/train_pipeline.py` | Orquestração do retreino |
 | `payloads/athena_queries.sql` | SQL de monitoramento |
+| `docs/ANALISE_METRICAS_ATHENA.md` | Guia de análise no Athena (Rafo044, reconcile) |

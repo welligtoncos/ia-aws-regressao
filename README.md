@@ -46,7 +46,7 @@ Glossário completo (tabelas, colunas, `is_champion`): **[docs/DATA_MODEL.md](do
 | **S3** `feature_importance.json` | Importância das variáveis | Auditoria de features |
 | **DynamoDB** `saldo-previsto-results-prod` | Status validate → Glue → finalize | Operação |
 
-Queries completas: [`payloads/athena_queries.sql`](payloads/athena_queries.sql).
+Queries completas: [`payloads/athena_queries.sql`](payloads/athena_queries.sql). Guia de análise: [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
 
 **Erro `COLUMN_NOT_FOUND: metricas_segmento`?** O catálogo Athena em prod ainda não tem as colunas novas. Execute uma vez [`payloads/athena_migrate_tb_metricas_treino.sql`](payloads/athena_migrate_tb_metricas_treino.sql) no console Athena (ou `terraform apply`), depois rode um retreino com o Glue atualizado.
 
@@ -112,12 +112,25 @@ ORDER BY dt_processamento DESC
 LIMIT 5;
 ```
 
-**4. Erro por segmento nas predições** (WAPE estável):
+**4. Gabarito por mês** (após reconcile ou export local):
+
+```sql
+SELECT ano, mes, segmento,
+       COUNT(*) AS registros,
+       ROUND(100.0 * SUM(erro_absoluto)
+         / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+GROUP BY ano, mes, segmento
+ORDER BY ano, mes, segmento;
+```
+
+**5. Erro por segmento nas predições** (WAPE estável):
 
 ```sql
 SELECT segmento,
        COUNT(*) AS registros,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto)
+         / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(AVG(erro_percentual), 2) AS mape_diag,
        ROUND(AVG(erro_absoluto), 2) AS mae_medio
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
@@ -125,7 +138,7 @@ GROUP BY segmento
 ORDER BY wape_pct DESC;
 ```
 
-**5. Tendência suavizada** (média móvel de 5 retreinos):
+**6. Tendência suavizada** (média móvel de 5 retreinos):
 
 ```sql
 SELECT dt_processamento,
@@ -139,6 +152,8 @@ LIMIT 30;
 ```
 
 Com EventBridge em `rate(2 minutes)`, há tentativa de pipeline a cada 2 min; linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`).
+
+**Interpretação rápida:** prefira **WAPE** para conclusões; use **RMSE** para comparar runs; **MAPE**/`erro_percentual` só como diagnóstico. Guia completo (pós-reconcile, troubleshooting): [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
 
 ### Dataset Rafo044 (banco sintético com série temporal)
 
@@ -164,6 +179,66 @@ python scripts/automate_rafo044_ingest.py --loop --interval-minutes 3 --upload
 ```
 
 Cada `--tick` envia um CSV novo em `incoming/`; o EventBridge (2 min) dispara treino. Compare predito vs realizado: `payloads/athena_queries.sql` (seção **Gabarito**).
+
+**Um único procedimento** (todos os lotes + treino após cada um + CSV de evolução):
+
+```powershell
+python scripts/run_rafo044_experiment.py --run-all --upload --wait-glue
+# Relatórios: data/reports/evolucao_metricas.csv e data/reports/gabarito_por_mes.csv
+```
+
+O `--run-all` aguarda o **JobRun do Glue iniciado após cada Step Functions** (não o último job da conta) e faz pausa de 30s entre lotes. Para evitar merge parcial por concorrência, use `--upload-all-incoming-once` (envia todos os lotes e dispara **um** Glue com todos os `INCOMING_KEYS`).
+
+**Verificar estado no S3** (sem upload):
+
+```powershell
+python scripts/run_rafo044_experiment.py --verify-only
+```
+
+Se aparecer `[AVISO]` com meses faltando em `dados_treino.csv` (ex.: 2015-10, 2015-12), o merge incremental ficou incompleto — corrija com `--reconcile` abaixo.
+
+**Reconcile** (painel completo + 1 treino — recomendado após merge incompleto):
+
+```powershell
+python scripts/run_rafo044_experiment.py --reconcile --upload
+```
+
+Equivalente manual (Parte A — ops sem esperar script novo):
+
+```powershell
+python scripts/generate_rafo044_sample.py --customers 2000
+python scripts/run_etl_rafo044.py --data-dir data/rafo044/raw --output data/dados_treino_full.csv
+aws s3 cp data/dados_treino_full.csv s3://saldo-previsto-data-prod/raw/saldo_previsto/dados_treino.csv
+aws glue start-job-run --job-name saldo-previsto-glue-job-prod --region us-east-1 `
+  --arguments '{"--run_id":"reconcile-full","--INGEST_DAILY":"false","--INCOMING_KEYS":"[]"}'
+python scripts/run_rafo044_experiment.py --verify-only
+python scripts/run_rafo044_experiment.py --export-reports
+```
+
+Critério de sucesso: `--verify-only` sem meses faltando; `dados_treino.csv` com todos os meses do painel (ex. 2015-06 … 2015-12); linhas no CSV tipicamente ~10–12 mil (menor que o painel local porque o Glue remove linhas sem `saldo_alvo`).
+
+**Analisar métricas após reconcile:**
+
+```powershell
+python scripts/run_rafo044_experiment.py --export-reports
+```
+
+No Athena (database `saldo_previsto_db_prod`), comece por:
+
+```sql
+-- Evolução de todos os retreinos
+SELECT dt_processamento, run_id, ROUND(wape, 2) AS wape, ROUND(rmse, 2) AS rmse,
+       total_linhas, modelo_versao, is_champion
+FROM saldo_previsto_db_prod.tb_metricas_treino
+ORDER BY dt_processamento;
+
+-- Runs do experimento Rafo044
+SELECT * FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE run_id LIKE 'rafo044-%'
+ORDER BY dt_processamento DESC;
+```
+
+Mais queries (gabarito por mês, segmento, champion): [`payloads/athena_queries.sql`](payloads/athena_queries.sql) e [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
 
 ### Ingestão incremental (prod — a cada 2 minutos)
 
@@ -310,7 +385,7 @@ workloads/shared/     # incremental_data, model_registry, target
 infra/                # Terraform
 scripts/              # Deploy e generate_dataset
 payloads/             # SFN input + athena_queries.sql
-docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md
+docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md, ANALISE_METRICAS_ATHENA.md
 ```
 
 ## Comandos

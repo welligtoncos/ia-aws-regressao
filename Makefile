@@ -29,6 +29,9 @@ rafo044-auto-init:
 rafo044-auto-tick:
 	$(PYTHON) scripts/automate_rafo044_ingest.py --tick --upload
 
+rafo044-experiment:
+	$(PYTHON) scripts/run_rafo044_experiment.py --run-all --upload --wait-glue
+
 generate-data-s3:
 	$(PYTHON) scripts/run_generate_dataset.py --clientes 5000 --meses 10 --bucket sample-data-dev
 

@@ -1,6 +1,9 @@
 -- Athena: Settings -> Query result location = s3://saldo-previsto-data-prod/athena-results/
 -- Database: saldo_previsto_db_prod
 --
+-- Guia passo a passo (Rafo044, reconcile, interpretacao): docs/ANALISE_METRICAS_ATHENA.md
+-- Relatorios locais: python scripts/run_rafo044_experiment.py --export-reports
+--
 -- PREREQUISITO metricas: payloads/athena_migrate_tb_metricas_treino.sql
 -- PREREQUISITO predicoes (se COLUMN_NOT_FOUND em saldo_real):
 --   payloads/athena_migrate_tb_saldo_previsto_prod.sql
