@@ -2,7 +2,62 @@
 
 Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena.
 
-## Documentação
+## Proposta de valor
+
+Automatizar o **treino, a validação e a publicação** de previsões de saldo bancário, com rastreabilidade operacional e consulta analítica em SQL — sem servidor de aplicação.
+
+| Para quem | Entrega |
+|-----------|---------|
+| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino agendado, métricas e feature importance no S3 |
+| **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
+| **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions |
+
+### Insight principal
+
+> O modelo **não erra igual para todos**. A leitura mais útil não é só o R² global — é o **MAPE por segmento e por mês**, que mostra onde priorizar retreino, regras de negócio ou novas features.
+
+### Onde ver evolução e qualidade
+
+| Fonte | O que mostra | Uso |
+|-------|----------------|-----|
+| **Athena** `saldo_previsto_db_prod.tb_saldo_previsto_prod` | Predições, erro, `modelo_versao`, `dt_processamento` | Erro por segmento/mês; comparar versões após retreinos |
+| **S3** `models/xgboost_saldo/metricas.json` | RMSE, MAE, R², MAPE do **último** treino | Snapshot da qualidade atual |
+| **S3** `models/xgboost_saldo/feature_importance.json` | Variáveis que mais explicam o saldo | Interpretabilidade e auditoria |
+| **DynamoDB** `saldo-previsto-results-prod` | Status das execuções (validate → Glue → finalize) | Monitoramento operacional |
+
+Queries prontas em [`payloads/athena_queries.sql`](payloads/athena_queries.sql).
+
+**Erro por segmento (onde o modelo mais precisa melhorar):**
+
+```sql
+SELECT segmento,
+       COUNT(*) AS registros,
+       ROUND(AVG(erro_percentual), 2) AS mape_medio,
+       ROUND(AVG(erro_absoluto), 2) AS mae_medio
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+GROUP BY segmento
+ORDER BY mape_medio DESC;
+```
+
+**Evolução entre retreinos (compare `modelo_versao`):**
+
+```sql
+SELECT modelo_versao,
+       MIN(dt_processamento) AS treinado_em,
+       ROUND(AVG(erro_percentual), 2) AS mape
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+GROUP BY modelo_versao
+ORDER BY treinado_em;
+```
+
+**Últimas métricas globais (CLI):**
+
+```powershell
+aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
+```
+
+Com o EventBridge ativo, cada execução gera nova `modelo_versao` — as queries acima passam a formar a **série temporal de qualidade do modelo**.
+
 
 **[Guia completo de instalação e testes → docs/GUIA_INSTALACAO.md](docs/GUIA_INSTALACAO.md)**
 
