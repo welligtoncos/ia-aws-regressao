@@ -15,10 +15,12 @@ from catalog_sync import register_partitions
 from incremental_data import ingest_simulated
 from metrics_history import save_metrics_history
 from model import (
+    calcular_baselines_holdout,
     calcular_metricas,
     calcular_metricas_por_segmento,
     extrair_feature_importance,
     gerar_predicoes_output,
+    resumo_baselines_vs_modelo,
     salvar_json_s3,
     treinar_modelo,
 )
@@ -123,10 +125,12 @@ def run_pipeline(config):
     xgb_params = _parse_xgboost_params(config.get("XGBOOST_PARAMS", "{}"))
     model = treinar_modelo(x_train, y_train, x_val, y_val, xgb_params)
     y_pred = model.predict(x_test)
+    test_meta = prep.meta_df.loc[x_test.index]
     metricas = calcular_metricas(y_test.values, y_pred)
-    metricas_segmento = calcular_metricas_por_segmento(
-        prep.meta_df.loc[x_test.index], y_test.values, y_pred
-    )
+    baselines = calcular_baselines_holdout(test_meta, y_test.values)
+    metricas_baseline = resumo_baselines_vs_modelo(metricas, baselines)
+    logger.info("Baselines holdout: %s", metricas_baseline)
+    metricas_segmento = calcular_metricas_por_segmento(test_meta, y_test.values, y_pred)
 
     model_path = config.get("MODEL_OUTPUT_PATH", "models/xgboost_saldo/")
     out_bucket = config["OUTPUT_BUCKET"]
@@ -134,12 +138,17 @@ def run_pipeline(config):
     modelo_versao = f"xgb-saldo-v1-{model_hash}"
 
     fi = extrair_feature_importance(model, list(x.columns))
+    max_data_ref = pd.to_datetime(df["data_referencia"]).max().isoformat()
+    dataset_fingerprint = hashlib.sha256(
+        f"{len(df)}|{max_data_ref}".encode()
+    ).hexdigest()[:16]
     ingest_meta_for_champion = {
         "run_id": run_id,
         "modelo_versao": modelo_versao,
         "total_linhas": len(df),
         "linhas_adicionadas": ingest_meta.get("rows_added", 0),
         "data_referencia_lote": ingest_meta.get("data_referencia", ""),
+        "dataset_fingerprint": dataset_fingerprint,
     }
     from model_registry import maybe_promote_champion
 
@@ -147,7 +156,11 @@ def run_pipeline(config):
         model, metricas, fi, ingest_meta_for_champion, out_bucket, model_path, region
     )
 
-    metricas_payload = {**metricas, "metricas_segmento": metricas_segmento}
+    metricas_payload = {
+        **metricas,
+        "metricas_segmento": metricas_segmento,
+        "metricas_baseline": metricas_baseline,
+    }
     salvar_json_s3(metricas_payload, out_bucket, f"{model_path}metricas.json", region)
     salvar_json_s3(fi, out_bucket, f"{model_path}feature_importance.json", region)
     salvar_json_s3(
@@ -171,6 +184,7 @@ def run_pipeline(config):
             **ingest_meta_for_champion,
             **champion_result,
             "metricas_segmento": metricas_segmento,
+            "metricas_baseline": metricas_baseline,
         },
         out_bucket,
         metrics_table,

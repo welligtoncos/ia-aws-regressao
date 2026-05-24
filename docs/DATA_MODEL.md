@@ -137,7 +137,7 @@ Não há FK formal; junte por `run_id` e `modelo_versao`.
 - **Não** significa “melhor modelo de todos os tempos”.
 - Champion **atual** = último `is_champion = true` por data **ou** arquivo em `champion/champion_meta.json`.
 
-Runs com métricas vazadas (R² ~1) podem ter `is_champion = true`; runs honestos podem ter `false` se não baterem RMSE do champion antigo.
+Promoção: **WAPE** −1 p.p., **R²** não piora > 0,01, **total_linhas** ≥ champion — [`CHAMPION_PROMOTION.md`](CHAMPION_PROMOTION.md). `champion/metrics.json` inclui `dataset_fingerprint` da base de treino.
 
 ---
 

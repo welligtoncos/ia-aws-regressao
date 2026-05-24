@@ -129,12 +129,11 @@ Comparativo com o pipeline legado (dados aleatórios + target vazado): WAPE ~**7
 
 | Run | `total_linhas` | WAPE | RMSE | R² | `is_champion` |
 |-----|----------------|------|------|-----|---------------|
+| `rafo044-20260524182148` | **12.168** | **20,45%** | 1543,32 | **0,845** | **true** |
 | `rafo044-20260524173006` (reconcile) | **12.168** | **20,45%** | 1543,32 | **0,845** | false |
-| `rafo044-20260524171108` (merge parcial) | 6.819 | 24,29% | **1473,74** | 0,837 | **true** |
+| `rafo044-20260524171108` (merge parcial) | 6.819 | 24,29% | **1473,74** | 0,837 | substituído |
 
-**Conclusão:** o pipeline **treina, publica métricas no Athena e predições particionadas** de forma reproduzível. O modelo com **painel completo** tem melhor WAPE e R² que o treino com dados incompletos.
-
-> **Atenção (champion):** a promoção usa **RMSE** (≥ 2% melhor que o anterior). O champion pode permanecer em um run com **menos linhas** e WAPE pior, enquanto o reconcile com 12.168 linhas não vira champion. Para produção, alinhar champion ao run com CSV completo (novo reconcile após reset do champion ou ajuste da regra).
+**Conclusão:** champion **`xgb-saldo-v1-460f98ec`** com painel completo (7 meses, 12.168 linhas). Promoção via [`CHAMPION_PROMOTION.md`](CHAMPION_PROMOTION.md) (WAPE −1 p.p., R², volume).
 
 ### Gabarito por mês e segmento (WAPE %)
 
@@ -223,6 +222,56 @@ SELECT 'SEG_ULTIMO_PROC', segmento, CAST(registros AS VARCHAR), CAST(wape_pct AS
 FROM por_segmento_ultimo
 ORDER BY tipo, col1 DESC;
 ```
+
+---
+
+## Revisão pós-validação (checklist de produção)
+
+### O que está bom
+
+| Item | Evidência |
+|------|-----------|
+| Champion correto | `rafo044-20260524182148` · `xgb-saldo-v1-460f98ec` · WAPE **20,45%** |
+| Treino ≈ produção | Holdout ~20,45% · `SEG_ULTIMO_PROC` ~19,7–20,9% por segmento |
+| Segmentos equilibrados | VAREJO / PRIME / PRIVATE na mesma faixa |
+| Estabilidade 2015 | WAPE mensal ~16–25% sem degradação clara |
+
+### O que precisa de atenção (esclarecido)
+
+| Tópico | Explicação |
+|--------|------------|
+| **Retreinos duplicados** | Mesmo CSV + mesmo XGBoost → mesmo `modelo_versao` e métricas. **Re-treina de verdade**; evite vários `--reconcile` sem mudar dados. |
+| **`linhas_adicionadas = 0`** | **Esperado no reconcile** (CSV substituído antes do Glue, sem merge `incoming/`). Em ticks incrementais deve ser > 0. |
+| **Datas 2015 em 2026** | **Intencional** — Rafo044 sintético / backtest; `dt_processamento` é quando o Glue rodou. |
+| **PRIVATE amostra pequena** | 38–64 reg./mês → WAPE mais volátil; considerar modelo por segmento ou mínimo N. |
+| **Viés** | Há **superestima leve** de saldo (média predito menos negativa que gabarito) — não é “sem viés”. |
+| **WAPE 20% vs quê?** | Baselines no Glue: `naive_saldo_m1` e `media_saldos_m1_m6` em `metricas_baseline` (JSON). |
+
+### Baselines (valor agregado do modelo)
+
+Após `upload_glue_assets` + retreino, consulte:
+
+```sql
+SELECT run_id, ROUND(wape, 2) AS modelo_wape,
+       ROUND(CAST(json_extract_scalar(metricas_baseline, '$.naive_wape') AS double), 2) AS naive_wape,
+       CAST(json_extract_scalar(metricas_baseline, '$.beats_naive') AS boolean) AS beats_naive,
+       ROUND(CAST(json_extract_scalar(metricas_baseline, '$.wape_gain_vs_naive_pp') AS double), 2) AS ganho_pp
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE metricas_baseline IS NOT NULL AND metricas_baseline <> ''
+ORDER BY dt_processamento DESC LIMIT 5;
+```
+
+O modelo deve ter `beats_naive = true` (WAPE menor que persistir `saldo_m1`).
+
+### Próximos passos sugeridos
+
+| Prioridade | Ação |
+|------------|------|
+| Alta | Não repetir reconcile sem mudança de dados |
+| Alta | Comparar `beats_naive` após deploy com baselines |
+| Média | Alerta drift: WAPE produção > treino + 2 p.p. (CloudWatch / query agendada) |
+| Média | WAPE por faixa de `saldo_m1` (quartis) no Athena |
+| Alta (negócio) | Substituir Rafo044 por extrato real do DW |
 
 ---
 

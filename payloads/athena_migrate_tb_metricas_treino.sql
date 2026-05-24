@@ -18,7 +18,8 @@ ADD COLUMNS (
   wape double,
   smape double,
   metricas_segmento string,
-  champion_wape double
+  champion_wape double,
+  metricas_baseline string
 );
 
 -- 3) Confirmar

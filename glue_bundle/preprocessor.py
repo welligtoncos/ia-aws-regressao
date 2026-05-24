@@ -68,6 +68,7 @@ class Preprocessor:
         if META_AUX_COL not in df.columns:
             df = prepare_training_dataset(df)
         meta_cols = ["cliente_id", "data_referencia", "segmento"]
+        meta_cols.extend(c for c in COLUNAS_HISTORICO_SALDO if c in df.columns)
         if META_AUX_COL in df.columns:
             meta_cols.append(META_AUX_COL)
         self.meta_df = df[meta_cols].copy()

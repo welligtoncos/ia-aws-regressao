@@ -92,6 +92,43 @@ def calcular_metricas(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float
     }
 
 
+COLUNAS_HISTORICO_SALDO = [
+    "saldo_m1", "saldo_m2", "saldo_m3", "saldo_m4", "saldo_m5", "saldo_m6",
+]
+
+
+def calcular_baselines_holdout(meta_df: pd.DataFrame, y_true: np.ndarray) -> Dict[str, Dict[str, float]]:
+    y_true = np.asarray(y_true, dtype=float)
+    out: Dict[str, Dict[str, float]] = {}
+    if "saldo_m1" in meta_df.columns:
+        out["naive_saldo_m1"] = calcular_metricas(y_true, meta_df["saldo_m1"].astype(float).values)
+    hist = [c for c in meta_df.columns if c in COLUNAS_HISTORICO_SALDO]
+    if hist:
+        out["media_saldos_m1_m6"] = calcular_metricas(
+            y_true, meta_df[hist].astype(float).mean(axis=1).values
+        )
+    return out
+
+
+def resumo_baselines_vs_modelo(
+    metricas_modelo: Dict[str, float], baselines: Dict[str, Dict[str, float]]
+) -> Dict[str, Any]:
+    model_wape = float(metricas_modelo.get("wape", 0))
+    resumo: Dict[str, Any] = {"modelo_wape": round(model_wape, 4), "baselines": baselines}
+    naive = baselines.get("naive_saldo_m1", {})
+    if naive:
+        nw = float(naive.get("wape", 0))
+        resumo["naive_wape"] = round(nw, 4)
+        resumo["beats_naive"] = model_wape < nw - 1e-9
+        resumo["wape_gain_vs_naive_pp"] = round(nw - model_wape, 4)
+    media = baselines.get("media_saldos_m1_m6", {})
+    if media:
+        mw = float(media.get("wape", 0))
+        resumo["media_saldos_wape"] = round(mw, 4)
+        resumo["beats_media_saldos"] = model_wape < mw - 1e-9
+    return resumo
+
+
 def calcular_metricas_por_segmento(
     meta_df: pd.DataFrame,
     y_true: np.ndarray,

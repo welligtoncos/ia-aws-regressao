@@ -143,7 +143,7 @@ flowchart LR
 |-------|-----------------|
 | Ingestão | `s3://.../raw/saldo_previsto/dados_treino.csv` |
 | Treino | `models/xgboost_saldo/metricas.json`, `history/{run_id}.json` |
-| Champion | `models/xgboost_saldo/champion/model.ubj` (se RMSE ≥ 2% melhor) |
+| Champion | `models/xgboost_saldo/champion/model.ubj` (WAPE ≥ 1 p.p. melhor + R² + volume) |
 | Métricas run | `processed/tb_metricas_treino/run_date=.../run_id=.../` |
 | Predições teste | `processed/tb_saldo_previsto_prod/ano=/mes=/segmento=/` |
 

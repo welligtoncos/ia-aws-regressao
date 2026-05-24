@@ -134,6 +134,18 @@ SELECT run_date, run_id, total_linhas, linhas_adicionadas,
 FROM saldo_previsto_db_prod.tb_metricas_treino
 ORDER BY dt_processamento;
 
+-- Baselines vs modelo (JSON metricas_baseline — apos migrate + retreino Glue novo)
+SELECT dt_processamento, run_id,
+       ROUND(wape, 2) AS modelo_wape,
+       ROUND(CAST(json_extract_scalar(metricas_baseline, '$.naive_wape') AS double), 2) AS naive_wape,
+       ROUND(CAST(json_extract_scalar(metricas_baseline, '$.media_saldos_wape') AS double), 2) AS media_saldos_wape,
+       CAST(json_extract_scalar(metricas_baseline, '$.beats_naive') AS boolean) AS beats_naive,
+       ROUND(CAST(json_extract_scalar(metricas_baseline, '$.wape_gain_vs_naive_pp') AS double), 2) AS ganho_pp_vs_naive
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE metricas_baseline IS NOT NULL AND metricas_baseline <> ''
+ORDER BY dt_processamento DESC
+LIMIT 10;
+
 -- Ultimo run vs champion (metricas globais do holdout de teste)
 SELECT dt_processamento,
        run_id,
@@ -148,7 +160,7 @@ FROM saldo_previsto_db_prod.tb_metricas_treino
 ORDER BY dt_processamento DESC
 LIMIT 5;
 
--- Runs que viraram champion (promocao: RMSE >= 2% melhor que anterior)
+-- Runs que viraram champion (promocao: WAPE >= 1 p.p. melhor, R2 e total_linhas — ver docs/CHAMPION_PROMOTION.md)
 SELECT run_id, modelo_versao, champion_modelo_versao,
        ROUND(rmse, 2) AS rmse,
        ROUND(wape, 2) AS wape,

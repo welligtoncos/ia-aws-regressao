@@ -33,7 +33,7 @@ Glossário completo (tabelas, colunas, `is_champion`): **[docs/DATA_MODEL.md](do
 |---------|----------------|
 | **Alvo (`saldo_alvo`)** | Saldo do **próximo período** (`saldo_m1` shift por cliente), sem fórmula no mesmo período — evita vazamento de features |
 | **Split** | Temporal **treino / validação / teste**; validação para early stopping; métricas finais no teste |
-| **Métrica principal** | **RMSE** (promoção champion) e **WAPE** (monitoramento e negócio) |
+| **Métrica principal** | **WAPE** (promoção champion e negócio); **RMSE** registrado, não define promoção |
 | **Diagnóstico** | MAPE, SMAPE, R² |
 
 ### Onde ver evolução e qualidade
@@ -43,7 +43,7 @@ Glossário completo (tabelas, colunas, `is_champion`): **[docs/DATA_MODEL.md](do
 | **Athena** `tb_saldo_previsto_prod` | Predições, `erro_absoluto`, `erro_percentual`, `modelo_versao` | WAPE/MAE por segmento e mês nas predições publicadas |
 | **Athena** `tb_metricas_treino` | RMSE, WAPE, SMAPE, MAPE, `metricas_segmento` (JSON), `is_champion` | Série temporal entre retreinos (1 partição por `run_id`) |
 | **S3** `models/xgboost_saldo/metricas.json` | Métricas globais + `metricas_segmento` do último treino | Snapshot atual |
-| **S3** `models/xgboost_saldo/champion/` | `model.ubj`, métricas e histórico de promoções | Modelo oficial quando RMSE melhora **≥ 2%** |
+| **S3** `models/xgboost_saldo/champion/` | `model.ubj`, métricas e histórico de promoções | Modelo oficial quando WAPE melhora **≥ 1 p.p.**, R² e volume OK — ver **[docs/CHAMPION_PROMOTION.md](docs/CHAMPION_PROMOTION.md)** |
 | **S3** `feature_importance.json` | Importância das variáveis | Auditoria de features |
 | **DynamoDB** `saldo-previsto-results-prod` | Status validate → Glue → finalize | Operação |
 
@@ -57,10 +57,12 @@ A cada retreino o Glue treina do zero e grava métricas. O `.ubj` **só vai para
 
 | Critério | Regra |
 |----------|--------|
-| **Promoção** | RMSE no teste **≥ 2% menor** que o champion atual (`CHAMPION_MIN_RMSE_IMPROVEMENT = 0.02`) |
-| **Não exige** | Melhora de MAPE ou WAPE (apenas diagnóstico nos logs) |
+| **WAPE (primária)** | Novo WAPE **≥ 1 p.p. menor** que o champion (`CHAMPION_MIN_WAPE_IMPROVEMENT_PP = 1.0`) |
+| **R²** | Não piora mais que **0,01** vs champion |
+| **Volume** | `total_linhas` do treino **≥** linhas do champion |
 | **`is_champion = true`** | Run que gravou novo `champion/model.ubj` |
-| **`run_id`** | Nome da execução Step Functions |
+
+Detalhes: **[docs/CHAMPION_PROMOTION.md](docs/CHAMPION_PROMOTION.md)**.
 
 ```powershell
 aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/champion/champion_meta.json -
@@ -411,7 +413,7 @@ workloads/shared/     # incremental_data, model_registry, target
 infra/                # Terraform
 scripts/              # Deploy e generate_dataset
 payloads/             # SFN input + athena_queries.sql
-docs/                 # GUIA_INSTALACAO, DATA_MODEL, FLUXO_TREINAMENTO_AWS, USO_REAL_E_ESCALABILIDADE, ANALISE_METRICAS_ATHENA
+docs/                 # ... CHAMPION_PROMOTION, ANALISE_METRICAS_ATHENA, USO_REAL_E_ESCALABILIDADE
 ```
 
 ## Comandos

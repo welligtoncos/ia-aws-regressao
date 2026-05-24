@@ -81,6 +81,47 @@ def calcular_metricas(y_true, y_pred):
     }
 
 
+COLUNAS_HISTORICO_SALDO = [
+    "saldo_m1", "saldo_m2", "saldo_m3", "saldo_m4", "saldo_m5", "saldo_m6",
+]
+
+
+def calcular_baselines_holdout(meta_df, y_true):
+    """
+    Baselines no holdout de teste (mesmo y_true do modelo).
+    - naive_saldo_m1: persiste saldo_m1 como previsão do próximo período (saldo_alvo).
+    - media_saldos_m1_m6: média de saldo_m1..m6 quando disponível.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    out = {}
+    if "saldo_m1" in meta_df.columns:
+        y_naive = meta_df["saldo_m1"].astype(float).values
+        out["naive_saldo_m1"] = calcular_metricas(y_true, y_naive)
+    hist = [c for c in meta_df.columns if c in COLUNAS_HISTORICO_SALDO]
+    if hist:
+        y_ma = meta_df[hist].astype(float).mean(axis=1).values
+        out["media_saldos_m1_m6"] = calcular_metricas(y_true, y_ma)
+    return out
+
+
+def resumo_baselines_vs_modelo(metricas_modelo, baselines):
+    """Compara WAPE do modelo com baselines para logs e Athena."""
+    model_wape = float(metricas_modelo.get("wape", 0))
+    resumo = {"modelo_wape": round(model_wape, 4), "baselines": baselines}
+    naive = baselines.get("naive_saldo_m1", {})
+    if naive:
+        nw = float(naive.get("wape", 0))
+        resumo["naive_wape"] = round(nw, 4)
+        resumo["beats_naive"] = model_wape < nw - 1e-9
+        resumo["wape_gain_vs_naive_pp"] = round(nw - model_wape, 4)
+    media = baselines.get("media_saldos_m1_m6", {})
+    if media:
+        mw = float(media.get("wape", 0))
+        resumo["media_saldos_wape"] = round(mw, 4)
+        resumo["beats_media_saldos"] = model_wape < mw - 1e-9
+    return resumo
+
+
 def calcular_metricas_por_segmento(meta_df, y_true, y_pred, segment_col="segmento"):
     if segment_col not in meta_df.columns:
         return {}
