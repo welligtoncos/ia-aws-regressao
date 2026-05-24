@@ -1,10 +1,34 @@
 """Detecção de arquivos novos em S3 (prefixo incoming/)."""
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from workloads.shared.aws_clients import get_s3_client
+from botocore.exceptions import ClientError
+
+from workloads.shared.aws_clients import get_glue_client, get_s3_client
 from workloads.shared.ingest_watermark import get_watermark
+
+logger = logging.getLogger(__name__)
+
+GLUE_ACTIVE_STATES = frozenset({"STARTING", "RUNNING", "STOPPING"})
+
+
+def is_glue_job_running(job_name: Optional[str]) -> bool:
+    if not job_name:
+        return False
+    try:
+        runs = get_glue_client().get_job_runs(JobName=job_name, MaxResults=1).get("JobRuns", [])
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("AccessDeniedException", "AccessDenied"):
+            logger.warning("Sem permissão glue:GetJobRuns; assumindo job ocupado: %s", job_name)
+            return True
+        raise
+    if not runs:
+        return False
+    return runs[0].get("JobRunState") in GLUE_ACTIVE_STATES
+
 
 
 def list_incoming_files(bucket: str, prefix: str) -> List[Dict[str, str]]:
@@ -52,7 +76,19 @@ def check_new_data(
     ingest_mode: str = "daily",
     step_minutes: int = 10,
     table_name: Optional[str] = None,
+    glue_job_name: Optional[str] = None,
 ) -> Dict[str, Any]:
+    if is_glue_job_running(glue_job_name):
+        return {
+            "has_new_data": False,
+            "new_files": [],
+            "new_file_keys": [],
+            "simulated_due": False,
+            "incoming_count": 0,
+            "glue_job_running": True,
+            "skip_reason": "glue_job_running",
+        }
+
     new_files = find_unprocessed_incoming(bucket, incoming_prefix, table_name)
     simulated_due = False
 
@@ -69,4 +105,5 @@ def check_new_data(
         "new_file_keys": [f["key"] for f in new_files],
         "simulated_due": simulated_due,
         "incoming_count": len(new_files),
+        "glue_job_running": False,
     }

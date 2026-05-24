@@ -63,6 +63,7 @@ locals {
       INGEST_SIMULATED    = var.ml_ingest_daily_simulated ? "true" : "false"
       INGEST_MODE         = var.ml_ingest_mode
       INGEST_STEP_MINUTES = tostring(var.ml_incremental_step_minutes)
+      GLUE_JOB_NAME       = local.glue_job_name
     }
   )
 

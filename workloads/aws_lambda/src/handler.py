@@ -47,6 +47,7 @@ def _check_new_data(event: Dict[str, Any]) -> Dict[str, Any]:
         ingest_mode=os.environ.get("INGEST_MODE", "daily"),
         step_minutes=int(os.environ.get("INGEST_STEP_MINUTES", "10")),
         table_name=table,
+        glue_job_name=os.environ.get("GLUE_JOB_NAME"),
     )
     result["run_id"] = event.get("run_id") or str(uuid.uuid4())
     result["status"] = "new_data" if result["has_new_data"] else "no_new_data"

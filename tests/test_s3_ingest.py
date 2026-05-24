@@ -60,3 +60,30 @@ def test_should_run_simulated_micro_after_interval(mock_wm):
     old = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
     mock_wm.return_value = {"last_simulated_at": old}
     assert should_run_simulated_micro(10) is True
+
+
+@patch("workloads.shared.s3_ingest.get_glue_client")
+def test_is_glue_job_running_access_denied_assumes_busy(mock_glue_client):
+    from botocore.exceptions import ClientError
+    from workloads.shared.s3_ingest import is_glue_job_running
+
+    mock_glue_client.return_value.get_job_runs.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+        "GetJobRuns",
+    )
+    assert is_glue_job_running("my-job") is True
+
+
+@patch("workloads.shared.s3_ingest.is_glue_job_running", return_value=True)
+@patch("workloads.shared.s3_ingest.get_watermark")
+@patch("workloads.shared.s3_ingest.list_incoming_files")
+def test_check_new_data_skips_when_glue_running(mock_list, mock_wm, mock_glue):
+    mock_list.return_value = [{"key": "incoming/a.csv", "etag": "e1"}]
+    mock_wm.return_value = {}
+
+    result = check_new_data("bucket", ingest_simulated=True, glue_job_name="my-job")
+
+    assert result["has_new_data"] is False
+    assert result["glue_job_running"] is True
+    assert result["skip_reason"] == "glue_job_running"
+    mock_glue.assert_called_once_with("my-job")

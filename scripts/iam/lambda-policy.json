@@ -18,6 +18,15 @@
       "Effect": "Allow",
       "Action": ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"],
       "Resource": "arn:aws:dynamodb:us-east-1:303238378103:table/saldo-previsto-results-prod"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["glue:GetJobRun", "glue:GetJobRuns"],
+      "Resource": [
+        "arn:aws:glue:us-east-1:303238378103:job/saldo-previsto-glue-job-prod",
+        "arn:aws:glue:us-east-1:303238378103:catalog",
+        "arn:aws:glue:us-east-1:303238378103:job/*"
+      ]
     }
   ]
 }

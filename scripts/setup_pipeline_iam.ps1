@@ -93,6 +93,11 @@ $lambdaPolicy = @"
       "Effect": "Allow",
       "Action": ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"],
       "Resource": "arn:aws:dynamodb:${Region}:${AccountId}:table/${Table}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["glue:GetJobRun", "glue:GetJobRuns"],
+      "Resource": "arn:aws:glue:${Region}:${AccountId}:job/${GlueJob}"
     }
   ]
 }
