@@ -1,0 +1,98 @@
+# Pipeline CI/CD genérico - AWS Workload Base Template
+
+version: "1.0"
+
+variables:
+  PYTHON_VERSION: "3.11"
+  TF_VERSION: "1.6.0"
+
+stages:
+  - lint
+  - test
+  - plan
+  - apply
+
+lint:
+  stage: lint
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - make lint
+
+test:
+  stage: test
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - make test
+
+plan-dev:
+  stage: plan
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make plan-dev
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+plan-hom:
+  stage: plan
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make plan-hom
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "homolog"
+
+plan-prod:
+  stage: plan
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make plan-prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+apply-dev:
+  stage: apply
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make apply-dev
+  environment:
+    name: dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: on_success
+
+apply-hom:
+  stage: apply
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make apply-hom
+  environment:
+    name: hom
+  rules:
+    - if: $CI_COMMIT_BRANCH == "homolog"
+      when: on_success
+
+apply-prod:
+  stage: apply
+  image:
+    name: hashicorp/terraform:1.6.0
+    entrypoint: [""]
+  script:
+    - make apply-prod
+  environment:
+    name: prod
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual

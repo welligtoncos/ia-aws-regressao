@@ -1,0 +1,14 @@
+{
+  "repository": "pypi-private",
+  "dependencies": [
+    {
+      "name": "org-glue-commons",
+      "version": "1.0.0",
+      "source": "https://artifactory.example.com/api/pypi/pypi-private/simple"
+    }
+  ],
+  "pip_config": {
+    "index_url": "https://artifactory.example.com/api/pypi/pypi-private/simple",
+    "trusted_host": "artifactory.example.com"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "Comment": "State machine de exemplo para novos projetos Step Functions",
+  "StartAt": "ValidateInput",
+  "States": {
+    "ValidateInput": {
+      "Type": "Pass",
+      "ResultPath": "$.validated",
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

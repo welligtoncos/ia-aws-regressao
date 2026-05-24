@@ -1,0 +1,21 @@
+# Exemplo: novo repositório de projeto AWS Lambda
+# Uso: terraform plan -var-file=../examples/lambda.terraform.tfvars.example
+
+project_name  = "my-lambda-project"
+environment   = "dev"
+workload_type = "lambda"
+aws_region    = "us-east-1"
+
+enable_lambda = true
+
+lambda_function_name = "my-lambda-project-lambda-dev"
+lambda_role_arn      = "arn:aws:iam::ACCOUNT_ID:role/my-lambda-project-lambda-role-dev"
+lambda_runtime       = "python3.11"
+lambda_handler       = "handler.lambda_handler"
+lambda_artifact_bucket = "my-lambda-project-artifacts-dev"
+lambda_artifact_key    = "builds/handler.zip"
+lambda_description     = "Lambda function - development"
+
+lambda_environment_variables = {
+  LOG_LEVEL = "INFO"
+}

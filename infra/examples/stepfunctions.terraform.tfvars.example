@@ -1,0 +1,26 @@
+# Exemplo: novo repositório de projeto AWS Step Functions
+# Uso: terraform plan -var-file=../examples/stepfunctions.terraform.tfvars.example
+
+project_name  = "my-sfn-project"
+environment   = "dev"
+workload_type = "stepfunctions"
+aws_region    = "us-east-1"
+
+enable_stepfunctions   = true
+sfn_state_machine_name = "my-sfn-project-sfn-dev"
+sfn_role_arn           = "arn:aws:iam::ACCOUNT_ID:role/my-sfn-project-sfn-role-dev"
+sfn_type               = "STANDARD"
+
+sfn_definition = <<-EOT
+{
+  "Comment": "State machine de exemplo",
+  "StartAt": "Pass",
+  "States": {
+    "Pass": {
+      "Type": "Pass",
+      "Result": "ok",
+      "End": true
+    }
+  }
+}
+EOT

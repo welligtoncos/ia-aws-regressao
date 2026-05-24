@@ -1,0 +1,21 @@
+# Exemplo: novo repositório de projeto AWS Glue
+# Uso: terraform plan -var-file=../examples/glue.terraform.tfvars.example
+
+project_name  = "my-glue-project"
+environment   = "dev"
+workload_type = "glue"
+aws_region    = "us-east-1"
+
+enable_glue_security_config = false
+enable_glue_connection      = true
+enable_glue_job             = true
+enable_glue_crawler         = false
+enable_glue_workflow        = false
+
+glue_connection_name = "my-glue-project-glue-connection-dev"
+glue_job_name        = "my-glue-project-glue-job-dev"
+glue_source_bucket   = "my-glue-project-source-dev"
+glue_output_bucket   = "my-glue-project-output-dev"
+glue_job_role_arn    = "arn:aws:iam::ACCOUNT_ID:role/my-glue-project-glue-role-dev"
+glue_script_location = "s3://my-glue-project-source-dev/scripts/main.py"
+glue_temp_dir        = "s3://my-glue-project-source-dev/temp/"

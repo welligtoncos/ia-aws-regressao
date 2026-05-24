@@ -1,0 +1,25 @@
+# Exemplo: automação completa na AWS
+# Fluxo: EventBridge (opcional) -> Step Functions -> Lambda -> Glue -> DynamoDB
+
+project_name  = "my-automation"
+environment   = "dev"
+workload_type = "pipeline"
+aws_region    = "us-east-1"
+
+enable_s3_buckets = true
+enable_dynamodb   = true
+
+enable_lambda        = true
+enable_glue_job      = true
+enable_stepfunctions = true
+sfn_use_pipeline_template = true
+
+glue_job_role_arn = "arn:aws:iam::ACCOUNT_ID:role/my-automation-glue-role-dev"
+lambda_role_arn   = "arn:aws:iam::ACCOUNT_ID:role/my-automation-lambda-role-dev"
+sfn_role_arn      = "arn:aws:iam::ACCOUNT_ID:role/my-automation-sfn-role-dev"
+
+glue_script_location = "s3://my-automation-dev-artifacts/scripts/main.py"
+lambda_artifact_key  = "builds/handler.zip"
+
+# enable_eventbridge_schedule = true
+# eventbridge_schedule_expression = "rate(1 day)"
