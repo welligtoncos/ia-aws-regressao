@@ -10,13 +10,20 @@ from io import StringIO
 
 import boto3
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 from catalog_sync import register_partitions
 from incremental_data import ingest_simulated
 from metrics_history import save_metrics_history
-from model import calcular_metricas, extrair_feature_importance, gerar_predicoes_output, salvar_json_s3, treinar_modelo
-from preprocessor import TARGET, Preprocessor
+from model import (
+    calcular_metricas,
+    calcular_metricas_por_segmento,
+    extrair_feature_importance,
+    gerar_predicoes_output,
+    salvar_json_s3,
+    treinar_modelo,
+)
+from preprocessor import Preprocessor
+from target import temporal_train_val_test_split
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -82,17 +89,6 @@ def write_parquet_s3_partitioned(df, bucket, prefix, region):
         boto3.client("s3", region_name=region).put_object(Bucket=bucket, Key=key, Body=buf.getvalue().to_pybytes())
 
 
-def _split_train_test(x, y, df_source, ingest_daily):
-    if ingest_daily and "data_referencia" in df_source.columns:
-        refs = df_source.loc[x.index, "data_referencia"]
-        order = refs.sort_values().index
-        x = x.loc[order]
-        y = y.loc[order]
-        split_at = int(len(x) * 0.8)
-        return x.iloc[:split_at], x.iloc[split_at:], y.iloc[:split_at], y.iloc[split_at:]
-    return train_test_split(x, y, test_size=0.2, random_state=42)
-
-
 def run_pipeline(config):
     inicio = time.time()
     region = config.get("AWS_REGION", "us-east-1")
@@ -121,11 +117,16 @@ def run_pipeline(config):
 
     prep = Preprocessor()
     x, y = prep.fit_transform(df)
-    x_train, x_test, y_train, y_test = _split_train_test(x, y, df, ingest_enabled or bool(incoming_keys))
+    x_train, x_val, x_test, y_train, y_val, y_test = temporal_train_val_test_split(
+        x, y, prep.meta_df, test_frac=0.2, val_frac=0.15
+    )
     xgb_params = _parse_xgboost_params(config.get("XGBOOST_PARAMS", "{}"))
-    model = treinar_modelo(x_train, y_train, x_test, y_test, xgb_params)
+    model = treinar_modelo(x_train, y_train, x_val, y_val, xgb_params)
     y_pred = model.predict(x_test)
     metricas = calcular_metricas(y_test.values, y_pred)
+    metricas_segmento = calcular_metricas_por_segmento(
+        prep.meta_df.loc[x_test.index], y_test.values, y_pred
+    )
 
     model_path = config.get("MODEL_OUTPUT_PATH", "models/xgboost_saldo/")
     out_bucket = config["OUTPUT_BUCKET"]
@@ -146,10 +147,17 @@ def run_pipeline(config):
         model, metricas, fi, ingest_meta_for_champion, out_bucket, model_path, region
     )
 
-    salvar_json_s3(metricas, out_bucket, f"{model_path}metricas.json", region)
+    metricas_payload = {**metricas, "metricas_segmento": metricas_segmento}
+    salvar_json_s3(metricas_payload, out_bucket, f"{model_path}metricas.json", region)
     salvar_json_s3(fi, out_bucket, f"{model_path}feature_importance.json", region)
     salvar_json_s3(
-        {**metricas, "run_id": run_id, "modelo_versao": modelo_versao, **ingest_meta, **champion_result},
+        {
+            **metricas_payload,
+            "run_id": run_id,
+            "modelo_versao": modelo_versao,
+            **ingest_meta,
+            **champion_result,
+        },
         out_bucket,
         f"{model_path}history/{run_id}.json",
         region,
@@ -162,6 +170,7 @@ def run_pipeline(config):
         {
             **ingest_meta_for_champion,
             **champion_result,
+            "metricas_segmento": metricas_segmento,
         },
         out_bucket,
         metrics_table,

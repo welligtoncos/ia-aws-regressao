@@ -5,6 +5,8 @@ import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
+from workloads.shared.target import assign_forward_target
+
 UFS = ["SP", "RJ", "MG", "RS", "BA", "PR", "SC", "GO", "PE", "CE"]
 GENEROS = ["M", "F"]
 
@@ -77,15 +79,6 @@ def gerar_dataset(n_clientes: int = 5000, n_meses: int = 10, seed: int = 42) -> 
             valor_debitos = float(rng.uniform(0, perfil["renda_mensal"] * 0.9))
             qtd_transacoes = int(rng.integers(0, 201))
 
-            ruido = rng.normal(0, perfil["renda_mensal"] * 0.05)
-            saldo_previsto = (
-                saldos[0]
-                + (valor_creditos - valor_debitos) * 0.7
-                + perfil["renda_mensal"] * 0.1
-                + ruido
-            )
-            saldo_previsto = round(max(0, saldo_previsto), 2)
-
             mes = data_ref.month
             linhas.append({
                 **perfil,
@@ -105,10 +98,9 @@ def gerar_dataset(n_clientes: int = 5000, n_meses: int = 10, seed: int = 42) -> 
                 "ano": data_ref.year,
                 "is_fim_de_ano": int(mes in (11, 12)),
                 "is_inicio_de_ano": int(mes == 1),
-                "saldo_previsto": saldo_previsto,
             })
 
-    return pd.DataFrame(linhas)
+    return assign_forward_target(pd.DataFrame(linhas))
 
 
 def upload_to_s3(df: pd.DataFrame, bucket: str, key: str, region: str = "us-east-1") -> None:

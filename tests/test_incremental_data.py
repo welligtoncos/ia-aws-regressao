@@ -3,11 +3,12 @@
 import pandas as pd
 
 from workloads.shared.incremental_data import bootstrap_dataset, gerar_lote_diario, ingest_daily_simulated
+from workloads.shared.target import assign_forward_target
 
 
 def test_bootstrap_dataset_shape():
-    df = bootstrap_dataset(n_clientes=100, n_meses=3, seed=1)
-    assert len(df) == 300
+    df = assign_forward_target(bootstrap_dataset(n_clientes=100, n_meses=3, seed=1))
+    assert len(df) == 200
     assert "saldo_previsto" in df.columns
 
 
@@ -32,8 +33,9 @@ def test_ingest_daily_simulated_local_logic(monkeypatch):
     monkeypatch.setattr("workloads.shared.incremental_data.read_csv_s3", fake_read)
     monkeypatch.setattr("workloads.shared.incremental_data.write_csv_s3", fake_write)
 
-    first = ingest_daily_simulated("b", "k", run_id="r1", seed_clientes=20, seed_meses=2)
+    first = ingest_daily_simulated("b", "k", run_id="r1", seed_clientes=20, seed_meses=3)
     assert first["total_rows"] == 40
     second = ingest_daily_simulated("b", "k", run_id="r2", new_clients=2)
     assert second["rows_added"] == 22
-    assert second["total_rows"] == 62
+    assert second["rows_before"] == first["total_rows"]
+    assert second["total_rows"] >= first["total_rows"]

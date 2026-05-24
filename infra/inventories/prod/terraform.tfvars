@@ -48,7 +48,7 @@ enable_glue_data_catalog = true
 # Ingestão micro a cada 1 min + detecção de arquivos novos
 ml_ingest_daily_simulated   = true
 ml_ingest_mode              = "micro"
-ml_incremental_step_minutes   = 1
+ml_incremental_step_minutes   = 15
 ml_incremental_new_clients    = 10
 ml_incremental_seed_clientes  = 5000
 ml_incoming_prefix            = "incoming/"
@@ -68,6 +68,6 @@ lambda_role_arn = "arn:aws:iam::303238378103:role/saldo-previsto-lambda-role-pro
 lambda_artifact_bucket = "saldo-previsto-data-prod"
 lambda_artifact_key      = "builds/handler.zip"
 
-# EventBridge: dispara pipeline a cada 1 minuto
+# EventBridge: dispara pipeline a cada 15 minutos (retreino; promoção exige RMSE >= 2% melhor)
 enable_eventbridge_schedule     = true
-eventbridge_schedule_expression = "rate(1 minute)"
+eventbridge_schedule_expression = "rate(15 minutes)"

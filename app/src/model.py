@@ -51,7 +51,7 @@ def _coerce_xgboost_params(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Erro percentual absoluto médio."""
+    """Erro percentual absoluto médio (diagnóstico; instável com saldos baixos)."""
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
     mask = y_true != 0
@@ -60,13 +60,55 @@ def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
 
 
+def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Weighted APE: sum(|erro|) / sum(|real|) * 100."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    denom = np.abs(y_true).sum()
+    if denom <= 0:
+        return 0.0
+    return float(np.abs(y_true - y_pred).sum() / denom * 100)
+
+
+def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Symmetric MAPE (%)."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    denom = (np.abs(y_true) + np.abs(y_pred)) / 2.0
+    mask = denom > 0
+    if not mask.any():
+        return 0.0
+    return float(np.mean(np.abs(y_true[mask] - y_pred[mask]) / denom[mask]) * 100)
+
+
 def calcular_metricas(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     return {
         "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
         "mae": float(mean_absolute_error(y_true, y_pred)),
         "r2": float(r2_score(y_true, y_pred)),
+        "wape": wape(y_true, y_pred),
+        "smape": smape(y_true, y_pred),
         "mape": mape(y_true, y_pred),
     }
+
+
+def calcular_metricas_por_segmento(
+    meta_df: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    segment_col: str = "segmento",
+) -> Dict[str, Dict[str, float]]:
+    """Métricas estratificadas por segmento no holdout de teste."""
+    if segment_col not in meta_df.columns:
+        return {}
+    segments = meta_df[segment_col].astype(str).values
+    out: Dict[str, Dict[str, float]] = {}
+    for seg in sorted(set(segments)):
+        mask = segments == seg
+        if mask.sum() < 2:
+            continue
+        out[seg] = calcular_metricas(y_true[mask], y_pred[mask])
+    return out
 
 
 def treinar_modelo(

@@ -10,7 +10,7 @@ from scripts.generate_dataset import gerar_dataset
 
 
 def _sample_df(n=100):
-    return gerar_dataset(n_clientes=n, n_meses=1)
+    return gerar_dataset(n_clientes=n, n_meses=2)
 
 
 def test_criar_features_derivadas():

@@ -7,6 +7,8 @@ from typing import List, Tuple
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
+from target import META_AUX_COL, assign_forward_target
+
 logger = logging.getLogger(__name__)
 
 COLUNAS_CATEGORICAS = ["segmento", "uf", "genero"]
@@ -58,14 +60,23 @@ class Preprocessor:
         self.label_encoders: dict = {}
         self.scaler = StandardScaler()
         self.feature_columns: List[str] = []
+        self.meta_df = None
 
     def fit_transform(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         logger.info("Iniciando pré-processamento")
+        if META_AUX_COL not in df.columns:
+            df = assign_forward_target(df)
+        meta_cols = ["cliente_id", "data_referencia", "segmento"]
+        if META_AUX_COL in df.columns:
+            meta_cols.append(META_AUX_COL)
+        self.meta_df = df[meta_cols].copy()
+
         df = criar_features_derivadas(df)
         df = tratar_nulos_saldo(df)
         df = remover_outliers_saldo(df)
         y = df[TARGET].copy()
-        work = df.drop(columns=COLUNAS_REMOVER + [TARGET], errors="ignore")
+        drop_extra = [META_AUX_COL] if META_AUX_COL in df.columns else []
+        work = df.drop(columns=COLUNAS_REMOVER + [TARGET] + drop_extra, errors="ignore")
         for col in COLUNAS_CATEGORICAS:
             if col in work.columns:
                 le = LabelEncoder()

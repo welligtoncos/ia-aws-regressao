@@ -1,5 +1,6 @@
-"""Persiste histórico de métricas && run para evolução no Athena."""
+"""Persiste histórico de métricas por run para evolução no Athena."""
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -26,7 +27,8 @@ def save_metrics_history(metricas, meta, bucket, table, database, region="us-eas
         "is_champion": bool(meta.get("is_champion", False)),
         "champion_modelo_versao": meta.get("champion_modelo_versao") or "",
         "champion_rmse": float(meta.get("champion_rmse") or 0),
-        "champion_mape": float(meta.get("champion_mape") or 0),
+        "champion_wape": float(meta.get("champion_wape") or 0),
+        "metricas_segmento": json.dumps(meta.get("metricas_segmento") or {}, ensure_ascii=False),
     }
     df = pd.DataFrame([row])
     prefix = f"processed/{table}"

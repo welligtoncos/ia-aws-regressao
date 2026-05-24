@@ -12,6 +12,8 @@ import pandas as pd
 from botocore.exceptions import ClientError
 from dateutil.relativedelta import relativedelta
 
+from target import assign_forward_target
+
 UFS = ["SP", "RJ", "MG", "RS", "BA", "PR", "SC", "GO", "PE", "CE"]
 GENEROS = ["M", "F"]
 PROFILE_COLS = [
@@ -61,13 +63,6 @@ def _linha_para_data(perfil: dict, data_ref: datetime, rng: np.random.Generator,
     valor_creditos = float(rng.uniform(0, perfil["renda_mensal"] * 1.2))
     valor_debitos = float(rng.uniform(0, perfil["renda_mensal"] * 0.9))
     qtd_transacoes = int(rng.integers(0, 201))
-    ruido = rng.normal(0, perfil["renda_mensal"] * 0.05)
-    saldo_previsto = (
-        saldos[0]
-        + (valor_creditos - valor_debitos) * 0.7
-        + perfil["renda_mensal"] * 0.1
-        + ruido
-    )
     mes = data_ref.month
     return {
         **perfil,
@@ -87,7 +82,6 @@ def _linha_para_data(perfil: dict, data_ref: datetime, rng: np.random.Generator,
         "ano": data_ref.year,
         "is_fim_de_ano": int(mes in (11, 12)),
         "is_inicio_de_ano": int(mes == 1),
-        "saldo_previsto": round(max(0, saldo_previsto), 2),
     }
 
 
@@ -116,7 +110,7 @@ def gerar_lote_diario(df_existente: pd.DataFrame, data_ref: datetime, new_client
     )
     for _, row in ultimo.iterrows():
         perfil = {col: row[col] for col in PROFILE_COLS if col in row}
-        saldo_seed = float(row.get("saldo_m1", row.get("saldo_previsto", 0)))
+        saldo_seed = float(row.get("saldo_m1", 0))
         linhas.append(_linha_para_data(perfil, data_ref, rng, saldo_seed=saldo_seed))
 
     if new_clients > 0:
@@ -205,6 +199,7 @@ def ingest_simulated(
     if len(df) > max_rows:
         df = df.sort_values("data_referencia").tail(max_rows).reset_index(drop=True)
 
+    df = assign_forward_target(df)
     write_csv_s3(df, bucket, key, region)
 
     ts = data_ref.strftime("%Y-%m-%dT%H%M")

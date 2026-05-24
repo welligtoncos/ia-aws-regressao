@@ -15,6 +15,8 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 
 CHAMPION_PREFIX = "champion"
+# Melhoria mínima de RMSE (fração) para promover — evita troca por ruído estatístico.
+CHAMPION_MIN_RMSE_IMPROVEMENT = 0.02
 
 
 def _s3():
@@ -32,15 +34,20 @@ def load_champion_metrics(bucket: str, model_path: str, region: str = "us-east-1
         raise
 
 
-def is_better_than_champion(new_metrics: Dict[str, float], champion_metrics: Optional[Dict[str, Any]]) -> bool:
-    """Promove apenas se RMSE e MAPE forem estritamente menores que o campeão."""
+def is_better_than_champion(
+    new_metrics: Dict[str, float],
+    champion_metrics: Optional[Dict[str, Any]],
+    min_rmse_improvement: float = CHAMPION_MIN_RMSE_IMPROVEMENT,
+) -> bool:
+    """Promove se RMSE melhorar pelo menos min_rmse_improvement (padrão 2%). WAPE/MAPE só diagnóstico."""
     if not champion_metrics:
         return True
     new_rmse = float(new_metrics["rmse"])
-    new_mape = float(new_metrics["mape"])
     champ_rmse = float(champion_metrics.get("rmse", float("inf")))
-    champ_mape = float(champion_metrics.get("mape", float("inf")))
-    return new_rmse < champ_rmse - 1e-9 and new_mape < champ_mape - 1e-9
+    if champ_rmse <= 0:
+        return new_rmse < champ_rmse - 1e-9
+    threshold = champ_rmse * (1.0 - min_rmse_improvement)
+    return new_rmse < threshold - 1e-9
 
 
 def _put_json(bucket: str, key: str, data: Dict[str, Any], region: str) -> None:
@@ -72,7 +79,7 @@ def maybe_promote_champion(
     model_path: str,
     region: str = "us-east-1",
 ) -> Dict[str, Any]:
-    """Promove run atual a campeão se RMSE e MAPE melhorarem vs champion atual."""
+    """Promove run atual a campeão se RMSE melhorar >= 2% vs champion atual."""
     base = model_path.rstrip("/")
     champion_prefix = f"{base}/{CHAMPION_PREFIX}"
     run_id = meta.get("run_id", "manual")
@@ -80,16 +87,19 @@ def maybe_promote_champion(
 
     current = load_champion_metrics(bucket, model_path, region)
     if not is_better_than_champion(metricas, current):
-        logger.info("Sem promoção: rmse=%s mape=%s (champion rmse=%s mape=%s)",
-                    metricas["rmse"], metricas["mape"],
-                    current.get("rmse") if current else None,
-                    current.get("mape") if current else None)
+        logger.info(
+            "Sem promoção: rmse=%s wape=%s (champion rmse=%s wape=%s)",
+            metricas["rmse"],
+            metricas.get("wape"),
+            current.get("rmse") if current else None,
+            current.get("wape") if current else None,
+        )
         return {
             "promoted": False,
             "is_champion": False,
             "champion_modelo_versao": current.get("modelo_versao") if current else None,
             "champion_rmse": current.get("rmse") if current else None,
-            "champion_mape": current.get("mape") if current else None,
+            "champion_wape": current.get("wape") if current else None,
         }
 
     save_model_s3(model, bucket, f"{champion_prefix}/model.ubj", region)
@@ -106,12 +116,17 @@ def maybe_promote_champion(
     _put_json(bucket, f"{champion_prefix}/champion_meta.json", promotion, region)
     _put_json(bucket, f"{champion_prefix}/history/{run_id}.json", promotion, region)
 
-    logger.info("Modelo promovido a champion: %s run_id=%s rmse=%s mape=%s",
-                modelo_versao, run_id, metricas["rmse"], metricas["mape"])
+    logger.info(
+        "Modelo promovido a champion: %s run_id=%s rmse=%s wape=%s",
+        modelo_versao,
+        run_id,
+        metricas["rmse"],
+        metricas.get("wape"),
+    )
     return {
         "promoted": True,
         "is_champion": True,
         "champion_modelo_versao": modelo_versao,
         "champion_rmse": metricas["rmse"],
-        "champion_mape": metricas["mape"],
+        "champion_wape": metricas.get("wape"),
     }

@@ -35,6 +35,18 @@ resource "aws_glue_catalog_table" "this" {
       type = "double"
     }
     columns {
+      name = "wape"
+      type = "double"
+    }
+    columns {
+      name = "smape"
+      type = "double"
+    }
+    columns {
+      name = "metricas_segmento"
+      type = "string"
+    }
+    columns {
       name = "modelo_versao"
       type = "string"
     }
@@ -67,7 +79,7 @@ resource "aws_glue_catalog_table" "this" {
       type = "double"
     }
     columns {
-      name = "champion_mape"
+      name = "champion_wape"
       type = "double"
     }
   }
