@@ -48,3 +48,18 @@ output "eventbridge_rule_arn" {
   description = "ARN da regra EventBridge (quando provisionada)."
   value       = try(module.eventbridge_schedule[0].rule_arn, null)
 }
+
+output "athena_database" {
+  description = "Database Glue Catalog consultável no Athena."
+  value       = try(module.glue_data_catalog[0].database_name, var.ml_output_database != "" ? var.ml_output_database : null)
+}
+
+output "athena_table" {
+  description = "Tabela qualificada no Athena (database.tabela)."
+  value       = try(module.glue_data_catalog[0].athena_query_table, null)
+}
+
+output "athena_s3_location" {
+  description = "Location S3 dos Parquet de resultado."
+  value       = try(module.glue_data_catalog[0].s3_location, null)
+}

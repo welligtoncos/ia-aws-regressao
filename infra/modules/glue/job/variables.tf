@@ -33,6 +33,30 @@ variable "glue_script_location" {
   type        = string
 }
 
+variable "glue_command_type" {
+  description = "Tipo do comando Glue: glueetl (Spark) ou pythonshell (ML/pandas)."
+  type        = string
+  default     = "glueetl"
+}
+
+variable "python_shell_capacity" {
+  description = "DPUs para job Python Shell."
+  type        = number
+  default     = 1
+}
+
+variable "number_of_workers" {
+  description = "Número de workers Glue."
+  type        = number
+  default     = 2
+}
+
+variable "worker_type" {
+  description = "Tipo de worker Glue."
+  type        = string
+  default     = "G.1X"
+}
+
 variable "tags" {
   description = "Tags dos recursos."
   type        = map(string)

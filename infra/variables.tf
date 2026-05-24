@@ -122,6 +122,12 @@ variable "enable_glue_security_config" {
   default     = false
 }
 
+variable "glue_kms_key_arn" {
+  description = "ARN da chave KMS para criptografia Glue (SSE-KMS). Vazio = usa SSE-S3 / modos sem KMS."
+  type        = string
+  default     = ""
+}
+
 variable "glue_security_group" {
   description = "Identificador do security group para Glue Connection."
   type        = string
@@ -378,4 +384,80 @@ variable "sfn_type" {
   description = "Tipo da state machine: STANDARD ou EXPRESS."
   type        = string
   default     = "STANDARD"
+}
+
+# ------------------------------------------------------------------------------
+# ML / XGBoost (previsão de saldo)
+# ------------------------------------------------------------------------------
+
+variable "ml_input_key" {
+  description = "Chave S3 do CSV de treino."
+  type        = string
+  default     = ""
+}
+
+variable "ml_output_database" {
+  description = "Database Glue Catalog de saída."
+  type        = string
+  default     = ""
+}
+
+variable "ml_output_table" {
+  description = "Tabela Glue Catalog de saída."
+  type        = string
+  default     = ""
+}
+
+variable "enable_glue_data_catalog" {
+  description = "Cria database/tabela no Glue Data Catalog para consulta no Athena."
+  type        = bool
+  default     = false
+}
+
+variable "ml_target_column" {
+  description = "Coluna alvo do modelo."
+  type        = string
+  default     = "saldo_previsto"
+}
+
+variable "ml_model_output_path" {
+  description = "Prefixo S3 para modelos e métricas."
+  type        = string
+  default     = "models/xgboost_saldo/"
+}
+
+variable "ml_mode" {
+  description = "Modo de execução: train ou predict."
+  type        = string
+  default     = "train"
+}
+
+variable "glue_number_of_workers" {
+  description = "Número de workers do Glue Job (modo glueetl)."
+  type        = number
+  default     = 2
+}
+
+variable "glue_command_type" {
+  description = "Tipo do Glue Job: glueetl ou pythonshell."
+  type        = string
+  default     = "glueetl"
+}
+
+variable "glue_python_shell_capacity" {
+  description = "DPUs para Glue Python Shell."
+  type        = number
+  default     = 1
+}
+
+variable "glue_worker_type" {
+  description = "Tipo de worker Glue (G.1X, G.2X, etc.)."
+  type        = string
+  default     = "G.1X"
+}
+
+variable "xgboost_params" {
+  description = "Parâmetros XGBoost passados ao Glue Job."
+  type        = map(string)
+  default     = {}
 }

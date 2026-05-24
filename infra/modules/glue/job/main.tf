@@ -5,9 +5,9 @@ resource "aws_glue_job" "this" {
   description = var.glue_job_description
 
   command {
-    name            = "glueetl"
+    name            = var.glue_command_type
     script_location = var.glue_script_location
-    python_version  = "3"
+    python_version  = var.glue_command_type == "pythonshell" ? "3.9" : "3"
   }
 
   default_arguments = merge(
@@ -18,9 +18,11 @@ resource "aws_glue_job" "this" {
     }
   )
 
-  glue_version      = "4.0"
-  number_of_workers = 2
-  worker_type       = "G.1X"
+  glue_version = var.glue_command_type == "pythonshell" ? "3.0" : "4.0"
+
+  max_capacity      = var.glue_command_type == "pythonshell" ? var.python_shell_capacity : null
+  number_of_workers = var.glue_command_type == "glueetl" ? var.number_of_workers : null
+  worker_type       = var.glue_command_type == "glueetl" ? var.worker_type : null
 
   tags = var.tags
 }

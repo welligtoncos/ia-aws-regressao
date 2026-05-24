@@ -1,0 +1,23 @@
+# Exemplo: pipeline ML XGBoost para previsão de saldo
+
+project_name  = "saldo-previsto"
+environment   = "dev"
+workload_type = "glue"
+aws_region    = "us-east-1"
+
+enable_glue_job = true
+s3_source_bucket_name = "sample-data-dev"
+s3_output_bucket_name = "sample-data-dev"
+
+ml_input_key       = "raw/saldo_previsto/dados_treino.csv"
+ml_output_database = "sample_db_dev"
+ml_output_table    = "tb_saldo_previsto_dev"
+ml_target_column   = "saldo_previsto"
+
+xgboost_params = {
+  n_estimators     = "300"
+  max_depth        = "6"
+  learning_rate    = "0.05"
+  subsample        = "0.8"
+  colsample_bytree = "0.8"
+}

@@ -2,9 +2,20 @@
 
 import os
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from workloads.shared.aws_clients import get_dynamodb_resource
+
+
+def _sanitize_for_dynamo(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _sanitize_for_dynamo(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_dynamo(v) for v in value]
+    return value
 
 
 def save_run_result(
@@ -16,12 +27,12 @@ def save_run_result(
     """Grava ou atualiza o resultado de uma execução."""
     table = get_dynamodb_resource().Table(table_name or os.environ["DYNAMODB_TABLE"])
     table.put_item(
-        Item={
+        Item=_sanitize_for_dynamo({
             "run_id": run_id,
             "status": status,
             "payload": payload,
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+        })
     )
 
 

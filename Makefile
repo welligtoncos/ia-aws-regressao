@@ -12,7 +12,16 @@ test:
 	$(PYTHON) -m pytest tests/ -v
 
 lint:
-	$(PYTHON) -m flake8 workloads/ tests/
+	$(PYTHON) -m flake8 app/ scripts/ workloads/ tests/
+
+generate-data:
+	$(PYTHON) scripts/run_generate_dataset.py --local-only --clientes 5000 --meses 10
+
+generate-data-s3:
+	$(PYTHON) scripts/run_generate_dataset.py --clientes 5000 --meses 10 --bucket sample-data-dev
+
+train-local:
+	$(PYTHON) app/src/main.py --input-bucket sample-data-dev --output-bucket sample-data-dev
 
 plan-dev:
 	$(MAKE) plan ENV=dev

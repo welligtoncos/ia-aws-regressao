@@ -2,7 +2,7 @@
 
 import json
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from workloads.aws_lambda.src.handler import lambda_handler
 

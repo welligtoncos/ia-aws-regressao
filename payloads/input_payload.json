@@ -1,0 +1,18 @@
+{
+  "bucket": "sample-data-dev",
+  "key": "raw/saldo_previsto/dados_treino.csv",
+  "database": "sample_db_dev",
+  "table": "tb_saldo_previsto_dev",
+  "target_column": "saldo_previsto",
+  "mode": "train",
+  "model_output_path": "models/xgboost_saldo/",
+  "xgboost_params": {
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8
+  },
+  "feature_engineering": true,
+  "save_feature_importance": true
+}

@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase",
+        "glue:GetTable",
+        "glue:GetPartitions",
+        "glue:CreatePartition",
+        "glue:UpdatePartition",
+        "glue:BatchCreatePartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:us-east-1:303238378103:catalog",
+        "arn:aws:glue:us-east-1:303238378103:database/saldo_previsto_db_prod",
+        "arn:aws:glue:us-east-1:303238378103:table/saldo_previsto_db_prod/*"
+      ]
+    }
+  ]
+}

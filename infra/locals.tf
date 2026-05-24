@@ -29,10 +29,18 @@ locals {
   glue_job_arguments = merge(
     var.glue_job_default_arguments,
     {
-      "--SOURCE_BUCKET"   = local.source_bucket_name
-      "--OUTPUT_BUCKET"   = local.output_bucket_name
-      "--DYNAMODB_TABLE"  = local.dynamodb_table_name
-      "--TempDir"         = var.glue_temp_dir != "" ? var.glue_temp_dir : "s3://${local.output_bucket_name}/temp/"
+      "--SOURCE_BUCKET"    = local.source_bucket_name
+      "--OUTPUT_BUCKET"    = local.output_bucket_name
+      "--DYNAMODB_TABLE"   = local.dynamodb_table_name
+      "--TempDir"          = var.glue_temp_dir != "" ? var.glue_temp_dir : "s3://${local.output_bucket_name}/temp/"
+      "--INPUT_BUCKET"     = local.source_bucket_name
+      "--INPUT_KEY"        = var.ml_input_key
+      "--OUTPUT_DATABASE"  = var.ml_output_database
+      "--OUTPUT_TABLE"     = var.ml_output_table
+      "--TARGET_COLUMN"    = var.ml_target_column
+      "--MODE"             = var.ml_mode
+      "--MODEL_OUTPUT_PATH" = var.ml_model_output_path
+      "--XGBOOST_PARAMS"   = jsonencode(var.xgboost_params)
     }
   )
 
@@ -46,6 +54,8 @@ locals {
       ENVIRONMENT    = var.environment
     }
   )
+
+  glue_catalog_s3_location = "s3://${local.output_bucket_name}/processed/${var.ml_output_table}/"
 
   sfn_definition = var.sfn_definition != "" ? var.sfn_definition : (
     var.sfn_use_pipeline_template ? templatefile("${path.root}/templates/stepfunctions/pipeline.asl.json.tpl", {

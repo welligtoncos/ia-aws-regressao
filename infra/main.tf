@@ -42,22 +42,28 @@ resource "aws_glue_security_configuration" "this" {
 
   encryption_configuration {
     cloudwatch_encryption {
-      cloudwatch_encryption_mode = "SSE-KMS"
+      cloudwatch_encryption_mode = var.glue_kms_key_arn != "" ? "SSE-KMS" : "DISABLED"
+      kms_key_arn                = var.glue_kms_key_arn != "" ? var.glue_kms_key_arn : null
     }
 
     job_bookmarks_encryption {
-      job_bookmarks_encryption_mode = "CSE-KMS"
+      job_bookmarks_encryption_mode = var.glue_kms_key_arn != "" ? "CSE-KMS" : "DISABLED"
+      kms_key_arn                   = var.glue_kms_key_arn != "" ? var.glue_kms_key_arn : null
     }
 
     s3_encryption {
-      s3_encryption_mode = "SSE-KMS"
+      s3_encryption_mode = var.glue_kms_key_arn != "" ? "SSE-KMS" : "SSE-S3"
+      kms_key_arn        = var.glue_kms_key_arn != "" ? var.glue_kms_key_arn : null
     }
   }
 }
 
 module "glue_standalone_job" {
   source = "./modules/glue/job"
-  count  = local.is_pipeline && var.enable_glue_job ? 1 : 0
+  count  = var.enable_glue_job && (
+    local.is_pipeline ||
+    (var.workload_type == "glue" && !var.enable_glue_connection && !var.enable_glue_crawler && !var.enable_glue_workflow)
+  ) ? 1 : 0
 
   project_name               = var.project_name
   environment                = var.environment
@@ -66,6 +72,10 @@ module "glue_standalone_job" {
   glue_job_description       = var.glue_job_description
   glue_job_default_arguments = local.glue_job_arguments
   glue_script_location       = var.glue_script_location
+  glue_command_type          = var.glue_command_type
+  python_shell_capacity      = var.glue_python_shell_capacity
+  number_of_workers          = var.glue_number_of_workers
+  worker_type                = var.glue_worker_type
   tags                       = local.common_tags
 }
 
@@ -130,6 +140,20 @@ module "glue_workflow_with_job" {
   glue_source_bucket         = local.source_bucket_name
   glue_output_bucket         = local.output_bucket_name
   tags                       = local.common_tags
+}
+
+# ==============================================================================
+# Glue Data Catalog (Athena)
+# ==============================================================================
+
+module "glue_data_catalog" {
+  source = "./modules/glue/catalog-table"
+  count  = var.enable_glue_data_catalog && var.ml_output_database != "" && var.ml_output_table != "" ? 1 : 0
+
+  database_name = var.ml_output_database
+  table_name    = var.ml_output_table
+  s3_location   = local.glue_catalog_s3_location
+  tags          = local.common_tags
 }
 
 # ==============================================================================

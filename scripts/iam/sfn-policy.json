@@ -1,0 +1,42 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["lambda:InvokeFunction"],
+      "Resource": "arn:aws:lambda:us-east-1:303238378103:function:saldo-previsto-lambda-prod"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "glue:StartJobRun",
+        "glue:GetJobRun",
+        "glue:GetJobRuns",
+        "glue:BatchStopJobRun"
+      ],
+      "Resource": [
+        "arn:aws:glue:us-east-1:303238378103:job/saldo-previsto-glue-job-prod",
+        "arn:aws:glue:us-east-1:303238378103:catalog",
+        "arn:aws:glue:us-east-1:303238378103:database/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::303238378103:role/saldo-previsto-glue-role-prod",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "glue.amazonaws.com" }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "states:StartExecution",
+      "Resource": "arn:aws:states:us-east-1:303238378103:stateMachine:saldo-previsto-sfn-prod"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["events:PutTargets", "events:PutRule", "events:DescribeRule"],
+      "Resource": "arn:aws:events:us-east-1:303238378103:rule/saldo-previsto-schedule-prod"
+    }
+  ]
+}

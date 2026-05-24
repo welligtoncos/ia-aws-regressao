@@ -1,5 +1,6 @@
 """
-Glue Job para automações: lê S3, processa com PySpark e persiste metadados no DynamoDB.
+Glue Job PySpark genérico (automação ETL).
+Para treino XGBoost, use app/src/glue_train.py no S3 — ver scripts/upload_glue_assets.ps1
 """
 
 import sys
@@ -23,9 +24,20 @@ def main() -> None:
         sys.argv,
         ["JOB_NAME", "SOURCE_BUCKET", "OUTPUT_BUCKET", "DYNAMODB_TABLE"],
     )
+
+    logger = get_structured_logger("glue-automation")
+    log_job_context(logger, args)
+
+    sc = SparkContext()
+    glue_context = GlueContext(sc)
+    spark = glue_context.spark_session
+    job = Job(glue_context)
+    job.init(args["JOB_NAME"], args)
+
     run_id = "manual-run"
     if "--run_id" in sys.argv:
         run_id = getResolvedOptions(sys.argv, ["run_id"])["run_id"]
+
     source_path = f"s3://{args['SOURCE_BUCKET']}/raw/"
     output_path = f"s3://{args['OUTPUT_BUCKET']}/processed/{run_id}/"
 
@@ -53,12 +65,7 @@ def main() -> None:
     logger.info("Writing to %s", output_path)
     df_transformed.coalesce(1).write.mode("overwrite").option("header", "true").csv(output_path)
 
-    # Metadados da execução ficam disponíveis para a Lambda de finalize via Step Functions
-    logger.info(
-        "Run %s completed. DynamoDB table: %s",
-        run_id,
-        args["DYNAMODB_TABLE"],
-    )
+    logger.info("Run %s completed. DynamoDB table: %s", run_id, args["DYNAMODB_TABLE"])
 
     job.commit()
     logger.info("Glue automation job completed.")

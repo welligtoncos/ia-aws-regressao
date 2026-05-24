@@ -1,30 +1,47 @@
-# Pipeline completo: S3 -> Lambda -> Glue -> DynamoDB (via Step Functions)
+# XGBoost - previsão de saldo bancário (dev)
 
-project_name  = "sample-automation"
+project_name  = "saldo-previsto"
 environment   = "dev"
-workload_type = "pipeline"
+workload_type = "glue"
 aws_region    = "us-east-1"
 
 # Storage
-enable_s3_buckets = true
-enable_dynamodb   = true
-dynamodb_hash_key = "run_id"
+enable_s3_buckets      = false
+s3_source_bucket_name  = "sample-data-dev"
+s3_output_bucket_name  = "sample-data-dev"
 
-# Compute
-enable_lambda        = true
+# Glue Job ML
 enable_glue_job      = true
-enable_stepfunctions = true
-sfn_use_pipeline_template = true
+glue_job_name        = "saldo-previsto-glue-job-dev"
+glue_job_role_arn    = "arn:aws:iam::000000000000:role/saldo-previsto-glue-role-dev"
+glue_job_description = "Treino XGBoost - previsão de saldo bancário"
+glue_script_location = "s3://sample-data-dev/scripts/glue_train.py"
+glue_number_of_workers = 2
+glue_worker_type       = "G.1X"
 
-# IAM roles (substituir pelos ARNs reais)
-glue_job_role_arn = "arn:aws:iam::000000000000:role/sample-automation-glue-role-dev"
-lambda_role_arn   = "arn:aws:iam::000000000000:role/sample-automation-lambda-role-dev"
-sfn_role_arn      = "arn:aws:iam::000000000000:role/sample-automation-sfn-role-dev"
+glue_job_default_arguments = {
+  "--job-language"              = "python"
+  "--extra-py-files"            = "s3://sample-data-dev/libs/app.zip"
+  "--additional-python-modules" = "xgboost==2.0.3,scikit-learn,pandas,pyarrow"
+}
 
-# Artefatos
-glue_script_location = "s3://sample-automation-dev-artifacts/scripts/main.py"
-lambda_artifact_key  = "builds/handler.zip"
+# ML
+ml_input_key          = "raw/saldo_previsto/dados_treino.csv"
+ml_output_database    = "sample_db_dev"
+ml_output_table       = "tb_saldo_previsto_dev"
+ml_target_column      = "saldo_previsto"
+ml_model_output_path  = "models/xgboost_saldo/"
+ml_mode               = "train"
 
-# Agendamento opcional
-enable_eventbridge_schedule     = false
-eventbridge_schedule_expression = "cron(0 6 * * ? *)"
+xgboost_params = {
+  n_estimators     = "300"
+  max_depth        = "6"
+  learning_rate    = "0.05"
+  subsample        = "0.8"
+  colsample_bytree = "0.8"
+}
+
+# Demais serviços desligados neste exemplo
+enable_lambda        = false
+enable_stepfunctions = false
+enable_dynamodb      = false
