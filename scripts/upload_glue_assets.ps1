@@ -11,7 +11,7 @@ $ZipPath = Join-Path $env:TEMP "glue-libs.zip"
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
 
 Write-Host "==> Empacotando glue_bundle (flat)..."
-Compress-Archive -Path "glue_bundle/train_pipeline.py","glue_bundle/preprocessor.py","glue_bundle/model.py","glue_bundle/catalog_sync.py","glue_bundle/incremental_data.py","glue_bundle/metrics_history.py" -DestinationPath $ZipPath -Force
+Compress-Archive -Path "glue_bundle/train_pipeline.py","glue_bundle/preprocessor.py","glue_bundle/model.py","glue_bundle/catalog_sync.py","glue_bundle/incremental_data.py","glue_bundle/metrics_history.py","glue_bundle/model_registry.py" -DestinationPath $ZipPath -Force
 aws s3 cp $ZipPath "s3://$Bucket/libs/app.zip" --region $Region
 
 Write-Host "==> Enviando glue_train.py..."

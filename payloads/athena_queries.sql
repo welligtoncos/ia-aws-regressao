@@ -56,3 +56,21 @@ SELECT run_date, run_id, total_linhas, linhas_adicionadas,
        dt_processamento
 FROM saldo_previsto_db_prod.tb_metricas_treino
 ORDER BY dt_processamento;
+
+-- Runs que viraram champion (modelo oficial)
+SELECT run_id, modelo_versao, champion_modelo_versao,
+       ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape,
+       dt_processamento
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE is_champion = true
+ORDER BY dt_processamento DESC;
+
+-- Versão champion atual (S3: models/xgboost_saldo/champion/champion_meta.json)
+SELECT champion_modelo_versao,
+       ROUND(champion_rmse, 2) AS champion_rmse,
+       ROUND(champion_mape, 4) AS champion_mape,
+       dt_processamento
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE is_champion = true
+ORDER BY dt_processamento DESC
+LIMIT 1;

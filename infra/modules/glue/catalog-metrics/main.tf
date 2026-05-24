@@ -54,6 +54,22 @@ resource "aws_glue_catalog_table" "this" {
       name = "data_referencia_lote"
       type = "string"
     }
+    columns {
+      name = "is_champion"
+      type = "boolean"
+    }
+    columns {
+      name = "champion_modelo_versao"
+      type = "string"
+    }
+    columns {
+      name = "champion_rmse"
+      type = "double"
+    }
+    columns {
+      name = "champion_mape"
+      type = "double"
+    }
   }
 
   partition_keys {

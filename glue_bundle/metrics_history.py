@@ -23,6 +23,10 @@ def save_metrics_history(metricas, meta, bucket, table, database, region="us-eas
         "total_linhas": int(meta.get("total_linhas", 0)),
         "linhas_adicionadas": int(meta.get("linhas_adicionadas", 0)),
         "data_referencia_lote": meta.get("data_referencia_lote", ""),
+        "is_champion": bool(meta.get("is_champion", False)),
+        "champion_modelo_versao": meta.get("champion_modelo_versao") or "",
+        "champion_rmse": float(meta.get("champion_rmse") or 0),
+        "champion_mape": float(meta.get("champion_mape") or 0),
     }
     df = pd.DataFrame([row])
     prefix = f"processed/{table}"

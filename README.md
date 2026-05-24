@@ -23,6 +23,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 | **Athena** `saldo_previsto_db_prod.tb_saldo_previsto_prod` | Predições, erro, `modelo_versao`, `dt_processamento` | Erro por segmento/mês; comparar versões após retreinos |
 | **Athena** `saldo_previsto_db_prod.tb_metricas_treino` | RMSE, MAPE, linhas adicionadas por `run_id` / `run_date` | Série temporal de qualidade entre retreinos |
 | **S3** `models/xgboost_saldo/metricas.json` | RMSE, MAE, R², MAPE do **último** treino | Snapshot da qualidade atual |
+| **S3** `models/xgboost_saldo/champion/` | Modelo XGBoost oficial (`model.ubj`), métricas e histórico de promoções | Versão usada quando RMSE/MAPE melhoram vs campeão anterior |
 | **S3** `models/xgboost_saldo/feature_importance.json` | Variáveis que mais explicam o saldo | Interpretabilidade e auditoria |
 | **DynamoDB** `saldo-previsto-results-prod` | Status das execuções (validate → Glue → finalize) | Monitoramento operacional |
 
@@ -55,7 +56,10 @@ ORDER BY treinado_em;
 
 ```powershell
 aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
+aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/champion/champion_meta.json -
 ```
+
+A coluna `is_champion` em `tb_metricas_treino` indica runs que **promoveram** o modelo oficial (critério: RMSE menor; empate → MAPE menor).
 
 Com o EventBridge ativo (`rate(1 minute)`), a cada ciclo com dados novos o pipeline gera uma nova `modelo_versao` — as queries acima formam a **série temporal de qualidade do modelo**.
 

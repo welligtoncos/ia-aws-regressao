@@ -132,10 +132,24 @@ def run_pipeline(config):
     model_hash = hashlib.md5(json.dumps(metricas, sort_keys=True).encode()).hexdigest()[:8]
     modelo_versao = f"xgb-saldo-v1-{model_hash}"
 
+    fi = extrair_feature_importance(model, list(x.columns))
+    ingest_meta_for_champion = {
+        "run_id": run_id,
+        "modelo_versao": modelo_versao,
+        "total_linhas": len(df),
+        "linhas_adicionadas": ingest_meta.get("rows_added", 0),
+        "data_referencia_lote": ingest_meta.get("data_referencia", ""),
+    }
+    from model_registry import maybe_promote_champion
+
+    champion_result = maybe_promote_champion(
+        model, metricas, fi, ingest_meta_for_champion, out_bucket, model_path, region
+    )
+
     salvar_json_s3(metricas, out_bucket, f"{model_path}metricas.json", region)
-    salvar_json_s3(extrair_feature_importance(model, list(x.columns)), out_bucket, f"{model_path}feature_importance.json", region)
+    salvar_json_s3(fi, out_bucket, f"{model_path}feature_importance.json", region)
     salvar_json_s3(
-        {**metricas, "run_id": run_id, "modelo_versao": modelo_versao, **ingest_meta},
+        {**metricas, "run_id": run_id, "modelo_versao": modelo_versao, **ingest_meta, **champion_result},
         out_bucket,
         f"{model_path}history/{run_id}.json",
         region,
@@ -146,11 +160,8 @@ def run_pipeline(config):
     save_metrics_history(
         metricas,
         {
-            "run_id": run_id,
-            "modelo_versao": modelo_versao,
-            "total_linhas": len(df),
-            "linhas_adicionadas": ingest_meta.get("rows_added", 0),
-            "data_referencia_lote": ingest_meta.get("data_referencia", ""),
+            **ingest_meta_for_champion,
+            **champion_result,
         },
         out_bucket,
         metrics_table,
