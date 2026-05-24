@@ -102,14 +102,19 @@ Cada retreino **acrescenta** linhas; filtre por `dt_processamento` ou `modelo_ve
 
 ## Queries Athena — partições legadas
 
-Partições gravadas **antes** da renomeação usam `saldo_previsto` / `saldo_real`. Use:
+O **catálogo Glue** precisa declarar as **quatro** colunas (`saldo_predito`, `saldo_realizado`, `saldo_previsto`, `saldo_real`). Sem isso, `COALESCE(saldo_realizado, saldo_real)` gera `COLUMN_NOT_FOUND`.
+
+Execute uma vez: `payloads/athena_migrate_tb_saldo_previsto_prod.sql`
 
 ```sql
-COALESCE(saldo_predito, saldo_previsto)   AS saldo_predito
-COALESCE(saldo_realizado, saldo_real) AS saldo_realizado
+COALESCE(saldo_predito, saldo_previsto)     AS saldo_predito
+COALESCE(saldo_realizado, saldo_real)       AS saldo_realizado
 ```
 
-Script de migração de catálogo (opcional): `payloads/athena_migrate_tb_saldo_previsto_prod.sql`
+| Partição | Colunas preenchidas no Parquet |
+|----------|--------------------------------|
+| Runs novos (`rename-cols-v1`, etc.) | `saldo_predito`, `saldo_realizado` |
+| Runs antigos | `saldo_previsto`, `saldo_real` |
 
 ---
 

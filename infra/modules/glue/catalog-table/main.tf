@@ -41,6 +41,14 @@ resource "aws_glue_catalog_table" "this" {
       type = "double"
     }
     columns {
+      name = "saldo_previsto"
+      type = "double"
+    }
+    columns {
+      name = "saldo_real"
+      type = "double"
+    }
+    columns {
       name = "uf"
       type = "string"
     }

@@ -1,25 +1,37 @@
 -- =============================================================================
--- Migracao: colunas canonicas em tb_saldo_previsto_prod
--- saldo_previsto -> saldo_predito (predicao do modelo)
--- saldo_real     -> saldo_realizado (valor observado no teste)
+-- Migracao tb_saldo_previsto_prod — colunas canonicas + legado
 --
--- Particoes Parquet antigas mantem nomes legados; use COALESCE nas queries
--- ou regrave predicoes com um novo retreino Glue.
+-- Erro: COLUMN_NOT_FOUND: Column 'saldo_real' cannot be resolved
+-- Causa: catálogo só tinha saldo_predito/saldo_realizado; COALESCE precisa das 4 no schema.
+--
+-- Execute no Athena (database saldo_previsto_db_prod), uma vez.
 -- =============================================================================
 
 DESCRIBE saldo_previsto_db_prod.tb_saldo_previsto_prod;
 
--- Opcional: adicionar colunas novas ao catalogo (particoes antigas ficam NULL)
+-- Colunas canônicas (runs novos após rename-cols-v1)
 ALTER TABLE saldo_previsto_db_prod.tb_saldo_previsto_prod
 ADD COLUMNS (
   saldo_predito double,
   saldo_realizado double
 );
 
+-- Colunas legado (partições Parquet antigas)
+ALTER TABLE saldo_previsto_db_prod.tb_saldo_previsto_prod
+ADD COLUMNS (
+  saldo_previsto double,
+  saldo_real double
+);
+
 DESCRIBE saldo_previsto_db_prod.tb_saldo_previsto_prod;
 
--- Exemplo de leitura unificada (legado + novo):
--- SELECT COALESCE(saldo_predito, saldo_previsto) AS saldo_predito,
---        COALESCE(saldo_realizado, saldo_real) AS saldo_realizado
--- FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
--- LIMIT 10;
+-- Leitura unificada (use em todas as queries):
+--   COALESCE(saldo_predito, saldo_previsto)   AS saldo_predito
+--   COALESCE(saldo_realizado, saldo_real)     AS saldo_realizado
+
+SELECT COALESCE(saldo_predito, saldo_previsto) AS saldo_predito,
+       COALESCE(saldo_realizado, saldo_real) AS saldo_realizado,
+       segmento, dt_processamento
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+ORDER BY dt_processamento DESC
+LIMIT 5;

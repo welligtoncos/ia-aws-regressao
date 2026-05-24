@@ -2,12 +2,13 @@
 -- Database: saldo_previsto_db_prod
 --
 -- PREREQUISITO metricas: payloads/athena_migrate_tb_metricas_treino.sql
--- PREREQUISITO predicoes: payloads/athena_migrate_tb_saldo_previsto_prod.sql (opcional)
+-- PREREQUISITO predicoes (se COLUMN_NOT_FOUND em saldo_real):
+--   payloads/athena_migrate_tb_saldo_previsto_prod.sql
 --
--- NOMES CANONICOS (docs/DATA_MODEL.md):
---   saldo_predito    = COALESCE(saldo_predito, saldo_previsto)   -- saida do modelo
---   saldo_realizado  = COALESCE(saldo_realizado, saldo_real)     -- valor observado
--- Treino CSV usa saldo_alvo (nao consultado nesta tabela).
+-- NOMES (docs/DATA_MODEL.md) — COALESCE exige as 4 colunas no catalogo Glue:
+--   saldo_predito    = COALESCE(saldo_predito, saldo_previsto)
+--   saldo_realizado  = COALESCE(saldo_realizado, saldo_real)
+-- Runs novos: só predito/realizado preenchidos. Runs antigos: só previsto/real.
 
 -- =============================================================================
 -- Predicoes (tb_saldo_previsto_prod)
