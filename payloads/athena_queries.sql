@@ -45,7 +45,7 @@ FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE segmento = 'VAREJO'
 LIMIT 20;
 
--- Evolução diária do treino (métricas por run)
+-- Evolução por retreino (ingestão micro a cada 10 min)
 SELECT run_date, run_id, total_linhas, linhas_adicionadas,
        data_referencia_lote,
        ROUND(rmse, 2) AS rmse,

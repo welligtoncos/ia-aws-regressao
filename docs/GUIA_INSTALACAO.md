@@ -28,30 +28,31 @@ Documentação do projeto **aws-ia-regressao**: template de automação AWS com 
 - Treina modelo **XGBoost** com feature engineering
 - Grava métricas, feature importance e predições no **S3**
 - Registra tabela no **Glue Data Catalog** para consulta no **Athena**
-- Orquestra o fluxo com **Step Functions** (Lambda → Glue → Lambda)
-- Agenda retreino com **EventBridge** (opcional)
-- Persiste histórico de execuções no **DynamoDB**
+- Orquestra o fluxo com **Step Functions** (check → validate → Glue → finalize)
+- **Ingesta dados simulados a cada 10 minutos** (micro-lotes) e detecta CSVs em `incoming/`
+- Agenda retreino com **EventBridge** (`rate(10 minutes)` em prod)
+- Persiste histórico de execuções no **DynamoDB** e métricas por run no **Athena** (`tb_metricas_treino`)
 
 ### Arquitetura (prod)
 
 ```mermaid
 flowchart TB
-  EB[EventBridge cron]
+  EB[EventBridge 10min]
   SFN[Step Functions]
+  L0[Lambda check_new_data]
   L1[Lambda validate]
   G[Glue Python Shell XGBoost]
   L2[Lambda finalize]
-  S3[(S3 Parquet + métricas)]
+  S3[(S3 CSV + Parquet + métricas)]
   CAT[Glue Catalog]
   ATH[Athena SQL]
-  DDB[(DynamoDB runs)]
+  DDB[(DynamoDB runs + watermark)]
 
-  EB --> SFN
-  SFN --> L1 --> S3
-  SFN --> G --> S3
-  G --> CAT
-  CAT --> ATH
-  SFN --> L2 --> DDB
+  EB --> SFN --> L0
+  L0 -->|sem dados| Skip[SkipNoNewData]
+  L0 -->|dados novos| L1 --> G --> S3
+  G --> CAT --> ATH
+  G --> L2 --> DDB
 ```
 
 ### Recursos AWS (ambiente prod atual)
@@ -64,8 +65,9 @@ flowchart TB
 | Lambda | `saldo-previsto-lambda-prod` |
 | DynamoDB | `saldo-previsto-results-prod` |
 | Glue Database | `saldo_previsto_db_prod` |
-| Glue/Athena Table | `tb_saldo_previsto_prod` |
-| EventBridge Rule | `saldo-previsto-schedule-prod` |
+| Glue/Athena Table (predições) | `tb_saldo_previsto_prod` |
+| Glue/Athena Table (métricas) | `tb_metricas_treino` |
+| EventBridge Rule | `saldo-previsto-schedule-prod` (`rate(10 minutes)`) |
 
 ---
 
@@ -314,7 +316,9 @@ aws stepfunctions list-executions `
   --max-results 5
 ```
 
-Fluxo esperado: **ValidateInput → RunGlueJob → FinalizeRun → SUCCEEDED**
+Fluxo esperado: **CheckNewData → HasNewData → ValidateInput → RunGlueJob → FinalizeRun → SUCCEEDED**
+
+Se não houver CSV em `incoming/` e o intervalo de 10 min ainda não passou: **CheckNewData → SkipNoNewData → SUCCEEDED** (sem treino).
 
 ### 6.4 Teste — DynamoDB (histórico de runs)
 
@@ -329,7 +333,7 @@ aws events describe-rule --name saldo-previsto-schedule-prod
 aws events list-targets-by-rule --rule saldo-previsto-schedule-prod
 ```
 
-Estado esperado: `"State": "ENABLED"`, target = Step Functions.
+Estado esperado: `"State": "ENABLED"`, `"ScheduleExpression": "rate(10 minutes)"`, target = Step Functions.
 
 ### 6.6 Checklist de validação
 
@@ -342,6 +346,7 @@ Estado esperado: `"State": "ENABLED"`, target = Step Functions.
 | 5 | SFN SUCCEEDED | Console Step Functions |
 | 6 | Partições no catálogo | `aws glue get-partitions --database-name saldo_previsto_db_prod --table-name tb_saldo_previsto_prod --query length(Partitions)` |
 | 7 | Query Athena retorna linhas | Ver seção 7 |
+| 8 | Métricas por run (10 min) | Query em `tb_metricas_treino` (seção 7) |
 
 ---
 
@@ -374,14 +379,39 @@ Mais queries em `payloads/athena_queries.sql`.
 | `modelo_versao` | Versão do modelo |
 | `ano`, `mes`, `segmento` | Partições |
 
+### Tabela de métricas (`tb_metricas_treino`)
+
+Histórico de cada retreino (um registro por execução com ingestão). Partições: `run_date`, `run_id`.
+
+| Coluna | Descrição |
+|--------|-----------|
+| `rmse`, `mae`, `r2`, `mape` | Métricas do holdout |
+| `total_linhas` | Tamanho do dataset após ingestão |
+| `linhas_adicionadas` | Linhas do micro-lote simulado |
+| `data_referencia_lote` | Timestamp do lote ingerido |
+| `modelo_versao` | Hash da versão do modelo |
+| `dt_processamento` | ISO8601 do treino |
+
+```sql
+SELECT run_date, run_id, linhas_adicionadas,
+       ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape, modelo_versao
+FROM saldo_previsto_db_prod.tb_metricas_treino
+ORDER BY dt_processamento DESC
+LIMIT 20;
+```
+
 ---
 
-## 8. Agendamento (EventBridge)
+## 8. Agendamento e ingestão (EventBridge)
 
-### Modo micro (prod — a cada 10 minutos)
+### Configuração atual em prod (micro — 10 minutos)
+
+O pipeline em produção **não usa ingestão diária**. A cada **10 minutos** o EventBridge dispara o Step Functions; se houver lote simulado pendente ou CSV em `incoming/`, o Glue ingere um micro-lote (+10 min na última data) e retreina.
 
 ```hcl
+enable_eventbridge_schedule     = true
 eventbridge_schedule_expression = "rate(10 minutes)"
+ml_ingest_daily_simulated       = true
 ml_ingest_mode                  = "micro"
 ml_incremental_step_minutes     = 10
 ml_enable_check_new_data        = true
@@ -390,7 +420,7 @@ glue_max_concurrent_runs        = 1
 
 Fluxo Step Functions (`pipeline-ml.asl.json.tpl`):
 
-1. Lambda `check_new_data` — arquivos novos em `incoming/` ou lote simulado pendente
+1. Lambda `check_new_data` — arquivos novos em `incoming/` **ou** lote simulado com ≥10 min desde o último
 2. Se não houver dados → encerra (`SkipNoNewData`)
 3. Se houver → valida → Glue (passa `--INCOMING_KEYS`) → finaliza (atualiza watermark)
 
@@ -400,24 +430,27 @@ CSV externo:
 aws s3 cp lote.csv s3://saldo-previsto-data-prod/incoming/lote.csv
 ```
 
-### Modo diário (legacy)
+Input enviado ao Step Functions pelo EventBridge:
 
-Cron configurado em prod (alternativa):
+```json
+{"run_id":"scheduled","source_prefix":"raw/"}
+```
+
+### Alternativa: ingestão diária (legacy)
+
+Para retreino **uma vez por dia** com lote diário (+1 dia, 10 clientes novos):
 
 ```hcl
 eventbridge_schedule_expression = "cron(0 6 * * ? *)"   # 06:00 UTC = 03:00 BRT
+ml_ingest_mode                  = "daily"
+ml_enable_check_new_data        = false
 ```
 
 Para **06:00 horário de Brasília**:
 
 ```hcl
 eventbridge_schedule_expression = "cron(0 9 * * ? *)"   # 09:00 UTC
-```
-
-Input enviado ao Step Functions:
-
-```json
-{"run_id":"scheduled","source_prefix":"raw/"}
+ml_ingest_mode                  = "daily"
 ```
 
 ---
@@ -432,6 +465,7 @@ Input enviado ao Step Functions:
 | `scripts/package_lambda.ps1 -Upload` | Zip + upload Lambda |
 | `scripts/setup_pipeline_iam.ps1` | Cria roles SFN + Lambda |
 | `scripts/register_catalog_partitions.py` | Bootstrap partições Athena |
+| `scripts/run_incremental_daily.py` | Teste manual de ingestão simulada (local/S3) |
 | `infra/terraform-dev.ps1` | Helper Terraform dev |
 
 ### Makefile
@@ -457,6 +491,8 @@ make generate-data  # dataset local
 | `TABLE_NOT_FOUND` no Athena | Database errado | Use `saldo_previsto_db_prod.tb_saldo_previsto_prod` |
 | `events:TagResource` denied | IAM usuário | Policy em `scripts/iam/terraform-user-eventbridge-policy.json` |
 | JSON inline no PowerShell falha | Parsing PS | Use `--input file://caminho/arquivo.json` |
+| `HIVE_INVALID_METADATA` duplicate columns | `run_id` duplicado (coluna + partição) | Já corrigido em `catalog-metrics`; `terraform apply` |
+| SFN `unknown action: check_new_data` | Lambda desatualizada | `package_lambda.ps1 -Upload` + `update-function-code` |
 | Terraform `.tfvars` error | PowerShell | `"-var-file=inventories/prod/terraform.tfvars"` entre aspas |
 
 ---

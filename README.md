@@ -1,6 +1,6 @@
 # AWS IA Regressão — Saldo Previsto
 
-Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena.
+Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 10 minutos** em produção.
 
 ## Proposta de valor
 
@@ -8,7 +8,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 
 | Para quem | Entrega |
 |-----------|---------|
-| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino agendado, métricas e feature importance no S3 |
+| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **10 min**, métricas e feature importance no S3 |
 | **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
 | **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions |
 
@@ -57,19 +57,30 @@ ORDER BY treinado_em;
 aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
 ```
 
-Com o EventBridge ativo, cada execução gera nova `modelo_versao` — as queries acima passam a formar a **série temporal de qualidade do modelo**.
+Com o EventBridge ativo (`rate(10 minutes)`), a cada ciclo com dados novos o pipeline gera uma nova `modelo_versao` — as queries acima formam a **série temporal de qualidade do modelo**.
 
-### Ingestão micro (10 min) + arquivos externos
+### Ingestão incremental (prod — a cada 10 minutos)
 
-Com `ml_ingest_mode = "micro"` e `eventbridge_schedule_expression = "rate(10 minutes)"`:
+Configuração atual em `infra/inventories/prod/terraform.tfvars`:
 
-1. **EventBridge** dispara o Step Functions a cada 10 minutos
+```hcl
+eventbridge_schedule_expression = "rate(10 minutes)"
+ml_ingest_mode                  = "micro"
+ml_incremental_step_minutes     = 10
+ml_ingest_daily_simulated       = true
+ml_enable_check_new_data        = true
+```
+
+Fluxo:
+
+1. **EventBridge** dispara o Step Functions a cada **10 minutos**
 2. **Lambda `check_new_data`** verifica:
-   - CSVs novos em `s3://<bucket>/incoming/` (por ETag vs watermark DynamoDB)
-   - Se passou o intervalo para lote simulado (`INGEST_STEP_MINUTES`)
-3. Se **não há dados novos**, o pipeline encerra sem treinar (`SkipNoNewData`)
-4. Se há dados, o **Glue** faz append micro (+10 min na última data, menos clientes novos por lote) e/ou merge dos CSVs de `incoming/`
-5. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas
+   - CSVs novos em `s3://saldo-previsto-data-prod/incoming/` (ETag vs watermark DynamoDB)
+   - Se passou o intervalo de **10 min** desde o último lote simulado
+3. Se **não há dados novos**, encerra sem treinar (`SkipNoNewData`)
+4. Se há dados, o **Glue** faz append de um **micro-lote** (+10 min na última `data_referencia`, ~2 clientes novos por lote) e/ou merge de CSVs em `incoming/`
+5. Retreina com split **temporal** e grava métricas em `tb_metricas_treino`
+6. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas
 
 Enviar CSV externo:
 
@@ -77,31 +88,35 @@ Enviar CSV externo:
 aws s3 cp meu_lote.csv s3://saldo-previsto-data-prod/incoming/meu_lote.csv
 ```
 
-O próximo ciclo detecta o arquivo, treina e marca o ETag como processado no DynamoDB (`__ingest_watermark__`).
-
-### Ingestão diária simulada (modo legacy)
-
-Com `ml_ingest_mode = "daily"`, **antes de cada treino** o Glue:
-
-1. **Append** de um lote diário no CSV (`raw/saldo_previsto/dados_treino.csv`)
-2. Adiciona **10 clientes novos** por dia (configurável)
-3. Salva auditoria em `landing/dt=YYYY-MM-DD/run_id=.../batch.csv`
-4. Retreina com split **temporal** (80% datas antigas / 20% recentes)
-5. Grava histórico de métricas em `tb_metricas_treino` (Athena)
+O próximo ciclo (≤10 min) detecta o arquivo, treina e marca o ETag no DynamoDB (`__ingest_watermark__`).
 
 ```sql
--- Evolução do modelo ao longo dos dias
+-- Evolução do modelo a cada retreino (micro-lotes de 10 min)
 SELECT run_date, run_id, total_linhas, linhas_adicionadas,
        ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape, modelo_versao
 FROM saldo_previsto_db_prod.tb_metricas_treino
-ORDER BY dt_processamento;
+ORDER BY dt_processamento DESC;
 ```
 
 Teste manual da ingestão (sem treinar):
 
 ```powershell
-python scripts/run_incremental_daily.py --run-id teste-dia-1
+python scripts/run_incremental_daily.py --run-id teste-micro-1
 ```
+
+<details>
+<summary>Modo diário (legacy — não usado em prod)</summary>
+
+Para retreino **uma vez por dia** em vez de micro-lotes, altere no tfvars:
+
+```hcl
+eventbridge_schedule_expression = "cron(0 6 * * ? *)"   # 06:00 UTC
+ml_ingest_mode                  = "daily"
+```
+
+Nesse modo o Glue adiciona **+1 dia** e **10 clientes novos** por execução.
+
+</details>
 
 
 **[Guia completo de instalação e testes → docs/GUIA_INSTALACAO.md](docs/GUIA_INSTALACAO.md)**
@@ -177,11 +192,13 @@ cd infra
 terraform apply "-var-file=inventories/prod/terraform.tfvars"
 ```
 
-Para **parar só a ingestão simulada** (pipeline roda apenas com CSV em `incoming/`):
+Para **parar só a ingestão simulada** (pipeline só treina com CSV em `incoming/`):
 
 ```hcl
 ml_ingest_daily_simulated = false
 ```
+
+Nesse caso o EventBridge continua disparando a cada 10 min, mas encerra em `SkipNoNewData` até chegar arquivo em `incoming/`.
 
 Para **religar**:
 
