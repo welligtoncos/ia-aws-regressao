@@ -11,23 +11,21 @@ from workloads.shared.ingest_watermark import get_watermark
 
 logger = logging.getLogger(__name__)
 
-GLUE_ACTIVE_STATES = frozenset({"STARTING", "RUNNING", "STOPPING"})
+GLUE_ACTIVE_STATES = frozenset({"STARTING", "RUNNING", "STOPPING", "WAITING"})
 
 
 def is_glue_job_running(job_name: Optional[str]) -> bool:
     if not job_name:
         return False
     try:
-        runs = get_glue_client().get_job_runs(JobName=job_name, MaxResults=1).get("JobRuns", [])
+        runs = get_glue_client().get_job_runs(JobName=job_name, MaxResults=5).get("JobRuns", [])
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "")
         if code in ("AccessDeniedException", "AccessDenied"):
             logger.warning("Sem permissão glue:GetJobRuns; assumindo job ocupado: %s", job_name)
             return True
         raise
-    if not runs:
-        return False
-    return runs[0].get("JobRunState") in GLUE_ACTIVE_STATES
+    return any(r.get("JobRunState") in GLUE_ACTIVE_STATES for r in runs)
 
 
 

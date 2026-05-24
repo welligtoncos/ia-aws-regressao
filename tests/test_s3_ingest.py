@@ -87,3 +87,16 @@ def test_check_new_data_skips_when_glue_running(mock_list, mock_wm, mock_glue):
     assert result["glue_job_running"] is True
     assert result["skip_reason"] == "glue_job_running"
     mock_glue.assert_called_once_with("my-job")
+
+
+@patch("workloads.shared.s3_ingest.get_glue_client")
+def test_is_glue_job_running_any_active_run(mock_glue_client):
+    from workloads.shared.s3_ingest import is_glue_job_running
+
+    mock_glue_client.return_value.get_job_runs.return_value = {
+        "JobRuns": [
+            {"JobRunState": "FAILED"},
+            {"JobRunState": "RUNNING"},
+        ]
+    }
+    assert is_glue_job_running("my-job") is True

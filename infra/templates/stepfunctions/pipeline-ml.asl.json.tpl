@@ -60,7 +60,18 @@
         }
       },
       "ResultPath": "$.glue",
-      "Next": "FinalizeRun"
+      "Next": "FinalizeRun",
+      "Catch": [
+        {
+          "ErrorEquals": ["Glue.ConcurrentRunsExceededException"],
+          "ResultPath": "$.glue_error",
+          "Next": "SkipGlueBusy"
+        }
+      ]
+    },
+    "SkipGlueBusy": {
+      "Type": "Succeed",
+      "Comment": "Glue ocupado (MaxConcurrentRuns=1); retentar no próximo ciclo"
     },
     "FinalizeRun": {
       "Type": "Task",
