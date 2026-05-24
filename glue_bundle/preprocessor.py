@@ -7,7 +7,8 @@ from typing import List, Tuple
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from target import META_AUX_COL, assign_forward_target
+from columns import TARGET_ALVO
+from target import META_AUX_COL, prepare_training_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ COLUNAS_NORMALIZAR = [
     "renda_mensal", "saldo_m1", "saldo_m2", "saldo_m3", "saldo_m4", "saldo_m5", "saldo_m6",
     "media_saldo_historico", "tendencia_saldo", "volatilidade_saldo", "saldo_por_renda",
 ]
-TARGET = "saldo_previsto"
+TARGET = TARGET_ALVO
 
 
 def criar_features_derivadas(df: pd.DataFrame) -> pd.DataFrame:
@@ -65,7 +66,7 @@ class Preprocessor:
     def fit_transform(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         logger.info("Iniciando pré-processamento")
         if META_AUX_COL not in df.columns:
-            df = assign_forward_target(df)
+            df = prepare_training_dataset(df)
         meta_cols = ["cliente_id", "data_referencia", "segmento"]
         if META_AUX_COL in df.columns:
             meta_cols.append(META_AUX_COL)

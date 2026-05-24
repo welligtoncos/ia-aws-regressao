@@ -11,7 +11,6 @@ import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from preprocessor import TARGET
 
 logger = logging.getLogger(__name__)
 
@@ -122,20 +121,28 @@ def salvar_json_s3(data, bucket, key, region="us-east-1"):
 
 
 def gerar_predicoes_output(df_original, y_pred, y_real, modelo_versao, run_id="manual"):
-    saldo_real = y_real if y_real is not None else df_original.get(TARGET, pd.Series(y_pred)).values
+    from columns import COL_PREDITO, COL_REALIZADO, TARGET_ALVO
+
+    saldo_observado = (
+        y_real
+        if y_real is not None
+        else df_original.get(TARGET_ALVO, df_original.get("saldo_previsto", pd.Series(y_pred))).values
+    )
     out = pd.DataFrame({
         "cliente_id": df_original["cliente_id"].values,
         "data_referencia": df_original["data_referencia"].values,
-        "saldo_previsto": y_pred,
-        "saldo_real": saldo_real,
+        COL_PREDITO: y_pred,
+        COL_REALIZADO: saldo_observado,
         "segmento": df_original["segmento"].values,
         "uf": df_original["uf"].values,
         "dt_processamento": datetime.now(timezone.utc).isoformat(),
         "modelo_versao": modelo_versao,
         "run_id": run_id,
     })
-    out["erro_absoluto"] = (out["saldo_real"] - out["saldo_previsto"]).abs()
-    out["erro_percentual"] = np.where(out["saldo_real"] != 0, out["erro_absoluto"] / out["saldo_real"].abs() * 100, 0)
+    out["erro_absoluto"] = (out[COL_REALIZADO] - out[COL_PREDITO]).abs()
+    out["erro_percentual"] = np.where(
+        out[COL_REALIZADO] != 0, out["erro_absoluto"] / out[COL_REALIZADO].abs() * 100, 0
+    )
     out["ano"] = df_original["ano"].values
     out["mes"] = df_original["mes"].values
     return out

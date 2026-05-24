@@ -9,7 +9,7 @@ from workloads.shared.target import assign_forward_target
 def test_bootstrap_dataset_shape():
     df = assign_forward_target(bootstrap_dataset(n_clientes=100, n_meses=3, seed=1))
     assert len(df) == 200
-    assert "saldo_previsto" in df.columns
+    assert "saldo_alvo" in df.columns
 
 
 def test_gerar_lote_diario_incrementa_linhas():

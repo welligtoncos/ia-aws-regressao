@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-from workloads.shared.target import assign_forward_target
+from workloads.shared.target import prepare_training_dataset
 
 UFS = ["SP", "RJ", "MG", "RS", "BA", "PR", "SC", "GO", "PE", "CE"]
 GENEROS = ["M", "F"]
@@ -100,7 +100,7 @@ def gerar_dataset(n_clientes: int = 5000, n_meses: int = 10, seed: int = 42) -> 
                 "is_inicio_de_ano": int(mes == 1),
             })
 
-    return assign_forward_target(pd.DataFrame(linhas))
+    return prepare_training_dataset(pd.DataFrame(linhas))
 
 
 def upload_to_s3(df: pd.DataFrame, bucket: str, key: str, region: str = "us-east-1") -> None:

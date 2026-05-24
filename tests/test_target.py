@@ -14,7 +14,7 @@ def test_assign_forward_target_drops_last_period():
     })
     out = assign_forward_target(df)
     assert len(out) == 2
-    assert out.loc[out["cliente_id"] == "A", "saldo_previsto"].iloc[0] == 200.0
+    assert out.loc[out["cliente_id"] == "A", "saldo_alvo"].iloc[0] == 200.0
 
 
 def test_temporal_split_no_leakage_columns():
@@ -26,7 +26,7 @@ def test_temporal_split_no_leakage_columns():
     }))
     meta = df[["cliente_id", "data_referencia", "segmento", "_proxima_data"]]
     x = pd.DataFrame({"f1": range(len(df))}, index=df.index)
-    y = df["saldo_previsto"]
+    y = df["saldo_alvo"]
     x_train, x_val, x_test, y_train, y_val, y_test = temporal_train_val_test_split(x, y, meta)
     assert len(x_test) > 0
     assert len(x_train) > 0

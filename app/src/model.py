@@ -171,26 +171,32 @@ def gerar_predicoes_output(
     from datetime import datetime, timezone
 
     try:
-        from src.preprocessor import TARGET
+        from workloads.shared.columns import COL_PREDITO, COL_REALIZADO, TARGET_ALVO
     except ImportError:
-        from app.src.preprocessor import TARGET
+        from app.src.preprocessor import TARGET as TARGET_ALVO
+        COL_PREDITO = "saldo_predito"
+        COL_REALIZADO = "saldo_realizado"
 
-    saldo_real = y_real if y_real is not None else df_original.get(TARGET, pd.Series(y_pred)).values
+    saldo_observado = (
+        y_real
+        if y_real is not None
+        else df_original.get(TARGET_ALVO, df_original.get("saldo_previsto", pd.Series(y_pred))).values
+    )
 
     out = pd.DataFrame({
         "cliente_id": df_original["cliente_id"].values,
         "data_referencia": df_original["data_referencia"].values,
-        "saldo_previsto": y_pred,
-        "saldo_real": saldo_real,
+        COL_PREDITO: y_pred,
+        COL_REALIZADO: saldo_observado,
         "segmento": df_original["segmento"].values,
         "uf": df_original["uf"].values,
         "dt_processamento": datetime.now(timezone.utc).isoformat(),
         "modelo_versao": modelo_versao,
     })
-    out["erro_absoluto"] = (out["saldo_real"] - out["saldo_previsto"]).abs()
+    out["erro_absoluto"] = (out[COL_REALIZADO] - out[COL_PREDITO]).abs()
     out["erro_percentual"] = np.where(
-        out["saldo_real"] != 0,
-        out["erro_absoluto"] / out["saldo_real"].abs() * 100,
+        out[COL_REALIZADO] != 0,
+        out["erro_absoluto"] / out[COL_REALIZADO].abs() * 100,
         0,
     )
     out["ano"] = df_original["ano"].values

@@ -1,9 +1,13 @@
 -- Athena: Settings -> Query result location = s3://saldo-previsto-data-prod/athena-results/
 -- Database: saldo_previsto_db_prod
 --
--- PREREQUISITO (COLUMN_NOT_FOUND em metricas_segmento ou wape):
---   Execute: payloads/athena_migrate_tb_metricas_treino.sql
---   Ou terraform apply + retreino Glue atualizado. Particoes antigas: NULL nessas colunas.
+-- PREREQUISITO metricas: payloads/athena_migrate_tb_metricas_treino.sql
+-- PREREQUISITO predicoes: payloads/athena_migrate_tb_saldo_previsto_prod.sql (opcional)
+--
+-- NOMES CANONICOS (docs/DATA_MODEL.md):
+--   saldo_predito    = COALESCE(saldo_predito, saldo_previsto)   -- saida do modelo
+--   saldo_realizado  = COALESCE(saldo_realizado, saldo_real)     -- valor observado
+-- Treino CSV usa saldo_alvo (nao consultado nesta tabela).
 
 -- =============================================================================
 -- Predicoes (tb_saldo_previsto_prod)
@@ -13,8 +17,8 @@
 SELECT ano, mes, segmento,
        COUNT(*) AS registros,
        ROUND(AVG(erro_percentual), 2) AS mape_medio_diag,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
-       ROUND(AVG(saldo_previsto), 2) AS saldo_previsto_medio
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
+       ROUND(AVG(COALESCE(saldo_predito, saldo_previsto)), 2) AS saldo_predito_medio
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY ano, mes, segmento
 ORDER BY ano, mes, segmento;
@@ -23,9 +27,9 @@ ORDER BY ano, mes, segmento;
 SELECT segmento,
        COUNT(*) AS registros,
        ROUND(AVG(erro_percentual), 2) AS mape_medio_diag,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(AVG(erro_absoluto), 2) AS mae_medio,
-       ROUND(AVG(saldo_real), 2) AS saldo_real_medio
+       ROUND(AVG(COALESCE(saldo_realizado, saldo_real)), 2) AS saldo_realizado_medio
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY segmento
 ORDER BY wape_pct DESC;
@@ -33,8 +37,8 @@ ORDER BY wape_pct DESC;
 -- Comparar MAPE vs WAPE (MAPE explode com saldo_real baixo)
 SELECT segmento,
        ROUND(AVG(erro_percentual), 2) AS mape_medio,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
-       ROUND(AVG(ABS(saldo_real)), 2) AS saldo_real_medio_abs
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
+       ROUND(AVG(ABS(COALESCE(saldo_realizado, saldo_real))), 2) AS saldo_realizado_medio_abs
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY segmento
 ORDER BY mape_medio DESC;
@@ -43,7 +47,7 @@ ORDER BY mape_medio DESC;
 SELECT ano, mes, segmento,
        COUNT(*) AS n,
        ROUND(AVG(erro_percentual), 2) AS mape_diag,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(STDDEV(erro_percentual), 2) AS volatilidade_mape
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY ano, mes, segmento
@@ -54,14 +58,17 @@ SELECT modelo_versao,
        MIN(dt_processamento) AS treinado_em,
        COUNT(*) AS registros,
        ROUND(AVG(erro_percentual), 2) AS mape_diag,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(AVG(erro_absoluto), 2) AS mae
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY modelo_versao
 ORDER BY treinado_em;
 
 -- Detalhe amostral
-SELECT cliente_id, saldo_previsto, saldo_real, erro_percentual, modelo_versao, run_id
+SELECT cliente_id,
+       COALESCE(saldo_predito, saldo_previsto) AS saldo_predito,
+       COALESCE(saldo_realizado, saldo_real) AS saldo_realizado,
+       erro_percentual, modelo_versao, run_id
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE segmento = 'VAREJO'
 LIMIT 20;
@@ -123,7 +130,7 @@ LIMIT 1;
 -- =============================================================================
 SELECT segmento,
        COUNT(*) AS registros,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(AVG(erro_percentual), 2) AS mape_diag
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE dt_processamento >= (
@@ -270,7 +277,7 @@ SELECT date_trunc('hour', from_iso8601_timestamp(dt_processamento))
        + (minute(from_iso8601_timestamp(dt_processamento)) / 15) * interval '15' minute AS slot_15m,
        COUNT(*) AS registros,
        ROUND(AVG(erro_percentual), 2) AS mape_diag,
-       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(saldo_real)), 0), 2) AS wape_pct,
+       ROUND(100.0 * SUM(erro_absoluto) / NULLIF(SUM(ABS(COALESCE(saldo_realizado, saldo_real))), 0), 2) AS wape_pct,
        ROUND(AVG(erro_absoluto), 2) AS mae,
        max(modelo_versao) AS modelo_versao
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod

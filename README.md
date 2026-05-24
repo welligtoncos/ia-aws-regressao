@@ -16,11 +16,21 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 
 > O modelo **não erra igual para todos**. A leitura mais útil combina **WAPE por segmento** (estável com saldos baixos) e erro por mês — não só R² global. **MAPE** permanece apenas como diagnóstico (oscila quando `saldo_real` é próximo de zero).
 
+### Modelagem de dados
+
+Glossário completo (tabelas, colunas, `is_champion`): **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)**
+
+| Nome | Onde | Significado |
+|------|------|-------------|
+| `saldo_alvo` | CSV treino | Rótulo: saldo do **próximo** período |
+| `saldo_predito` | Athena predições | Saída do **modelo** |
+| `saldo_realizado` | Athena predições | Valor **observado** no teste |
+
 ### Alvo e qualidade do modelo
 
 | Aspecto | Comportamento |
 |---------|----------------|
-| **Alvo (`saldo_previsto`)** | Saldo do **próximo período** (`saldo_m1` shift por cliente), sem fórmula no mesmo período — evita vazamento de features |
+| **Alvo (`saldo_alvo`)** | Saldo do **próximo período** (`saldo_m1` shift por cliente), sem fórmula no mesmo período — evita vazamento de features |
 | **Split** | Temporal **treino / validação / teste**; validação para early stopping; métricas finais no teste |
 | **Métrica principal** | **RMSE** (promoção champion) e **WAPE** (monitoramento e negócio) |
 | **Diagnóstico** | MAPE, SMAPE, R² |
@@ -275,7 +285,7 @@ workloads/shared/     # incremental_data, model_registry, target
 infra/                # Terraform
 scripts/              # Deploy e generate_dataset
 payloads/             # SFN input + athena_queries.sql
-docs/                 # GUIA_INSTALACAO.md
+docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md
 ```
 
 ## Comandos

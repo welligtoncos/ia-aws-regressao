@@ -1,4 +1,4 @@
-"""Alvo futuro (saldo do próximo período) e split temporal sem vazamento."""
+"""Alvo futuro e split temporal — bundle Glue."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ from typing import Tuple
 
 import pandas as pd
 
-TARGET = "saldo_previsto"
+from columns import TARGET_ALVO, TARGET_LEGACY
+
+TARGET = TARGET_ALVO
 META_AUX_COL = "_proxima_data"
 
 
-def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET) -> pd.DataFrame:
+def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET_ALVO) -> pd.DataFrame:
     required = {"cliente_id", "data_referencia", "saldo_m1"}
     if not required.issubset(df.columns):
         return df
@@ -19,6 +21,14 @@ def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET) -> pd.Data
     out[target_col] = out.groupby("cliente_id", sort=False)["saldo_m1"].shift(-1)
     out[META_AUX_COL] = out.groupby("cliente_id", sort=False)["data_referencia"].shift(-1)
     return out.dropna(subset=[target_col]).reset_index(drop=True)
+
+
+def prepare_training_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in (TARGET_ALVO, TARGET_LEGACY):
+        if col in out.columns:
+            out = out.drop(columns=[col])
+    return assign_forward_target(out, target_col=TARGET_ALVO)
 
 
 def temporal_train_val_test_split(

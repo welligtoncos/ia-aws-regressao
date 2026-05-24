@@ -12,7 +12,7 @@ import pandas as pd
 from botocore.exceptions import ClientError
 from dateutil.relativedelta import relativedelta
 
-from workloads.shared.target import assign_forward_target
+from workloads.shared.target import prepare_training_dataset
 
 UFS = ["SP", "RJ", "MG", "RS", "BA", "PR", "SC", "GO", "PE", "CE"]
 GENEROS = ["M", "F"]
@@ -199,7 +199,7 @@ def ingest_simulated(
     if len(df) > max_rows:
         df = df.sort_values("data_referencia").tail(max_rows).reset_index(drop=True)
 
-    df = assign_forward_target(df)
+    df = prepare_training_dataset(df)
     write_csv_s3(df, bucket, key, region)
 
     ts = data_ref.strftime("%Y-%m-%dT%H%M")

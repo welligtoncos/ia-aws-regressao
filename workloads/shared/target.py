@@ -6,11 +6,13 @@ from typing import Tuple
 
 import pandas as pd
 
-TARGET = "saldo_previsto"
+from workloads.shared.columns import TARGET_ALVO, TARGET_LEGACY
+
+TARGET = TARGET_ALVO  # alias usado pelo preprocessor
 META_AUX_COL = "_proxima_data"
 
 
-def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET) -> pd.DataFrame:
+def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET_ALVO) -> pd.DataFrame:
     """
     Define o alvo como saldo_m1 do período seguinte por cliente.
     Remove linhas sem período futuro (último mês de cada cliente).
@@ -25,6 +27,18 @@ def assign_forward_target(df: pd.DataFrame, target_col: str = TARGET) -> pd.Data
     return out.dropna(subset=[target_col]).reset_index(drop=True)
 
 
+def prepare_training_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Recalcula o alvo de treino (saldo_alvo) a partir do histórico.
+    Remove saldo_previsto legado do CSV para evitar misturar alvo antigo vazado.
+    """
+    out = df.copy()
+    for col in (TARGET_ALVO, TARGET_LEGACY):
+        if col in out.columns:
+            out = out.drop(columns=[col])
+    return assign_forward_target(out, target_col=TARGET_ALVO)
+
+
 def temporal_train_val_test_split(
     x: pd.DataFrame,
     y: pd.Series,
@@ -32,10 +46,6 @@ def temporal_train_val_test_split(
     test_frac: float = 0.2,
     val_frac: float = 0.15,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
-    """
-    Split temporal: treino / validação (early stopping) / teste.
-    Exclui do treino linhas cujo alvo (próximo período) cai no conjunto de teste.
-    """
     meta = meta_df.loc[x.index].copy()
     meta["data_referencia"] = pd.to_datetime(meta["data_referencia"])
     if META_AUX_COL in meta.columns:

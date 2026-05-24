@@ -33,11 +33,11 @@ resource "aws_glue_catalog_table" "this" {
       type = "string"
     }
     columns {
-      name = "saldo_previsto"
+      name = "saldo_predito"
       type = "double"
     }
     columns {
-      name = "saldo_real"
+      name = "saldo_realizado"
       type = "double"
     }
     columns {
