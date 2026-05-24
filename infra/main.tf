@@ -222,7 +222,6 @@ module "eventbridge_schedule" {
   target_arn          = var.eventbridge_target_arn != "" ? var.eventbridge_target_arn : module.stepfunctions[0].state_machine_arn
   target_role_arn     = var.sfn_role_arn
   input = jsonencode({
-    run_id        = "scheduled"
     source_prefix = "raw/"
   })
   tags = local.common_tags

@@ -305,8 +305,10 @@ aws stepfunctions start-execution `
 Payload em `payloads/sfn_input.json`:
 
 ```json
-{"run_id":"manual-001","source_prefix":"raw/saldo_previsto/"}
+{"source_prefix":"raw/saldo_previsto/"}
 ```
+
+O `run_id` é gerado automaticamente pelo Step Functions (`--name` na execução ou UUID do EventBridge).
 
 Verificar status:
 
@@ -383,6 +385,8 @@ Mais queries em `payloads/athena_queries.sql`.
 
 Histórico de cada retreino (um registro por execução com ingestão). Partições: `run_date`, `run_id`.
 
+O `run_id` é o **nome da execução do Step Functions** (`$$.Execution.Name`), único a cada ciclo do EventBridge — evita sobrescrever a partição `scheduled` no Athena.
+
 | Coluna | Descrição |
 |--------|-----------|
 | `rmse`, `mae`, `r2`, `mape` | Métricas do holdout |
@@ -433,8 +437,10 @@ aws s3 cp lote.csv s3://saldo-previsto-data-prod/incoming/lote.csv
 Input enviado ao Step Functions pelo EventBridge:
 
 ```json
-{"run_id":"scheduled","source_prefix":"raw/"}
+{"source_prefix":"raw/"}
 ```
+
+Cada execução recebe `run_id` = nome único da execução SFN (histórico completo no Athena).
 
 ### Alternativa: ingestão diária (legacy)
 

@@ -74,3 +74,65 @@ FROM saldo_previsto_db_prod.tb_metricas_treino
 WHERE is_champion = true
 ORDER BY dt_processamento DESC
 LIMIT 1;
+
+-- =============================================================================
+-- Resultado a cada minuto (tb_metricas_treino)
+-- Nota: so ha linha nos minutos em que houve retreino (SkipNoNewData nao grava).
+-- =============================================================================
+
+-- Ultimo retreino de cada minuto (ultimas 2 horas)
+WITH por_minuto AS (
+  SELECT date_trunc('minute', from_iso8601_timestamp(dt_processamento)) AS minuto,
+         dt_processamento,
+         modelo_versao,
+         rmse,
+         mae,
+         mape,
+         r2,
+         total_linhas,
+         linhas_adicionadas,
+         is_champion,
+         row_number() OVER (
+           PARTITION BY date_trunc('minute', from_iso8601_timestamp(dt_processamento))
+           ORDER BY dt_processamento DESC
+         ) AS rn
+  FROM saldo_previsto_db_prod.tb_metricas_treino
+  WHERE from_iso8601_timestamp(dt_processamento)
+        >= current_timestamp - interval '2' hour
+)
+SELECT minuto,
+       ROUND(rmse, 2) AS rmse,
+       ROUND(mae, 2) AS mae,
+       ROUND(mape, 4) AS mape,
+       ROUND(r2, 4) AS r2,
+       total_linhas,
+       linhas_adicionadas,
+       modelo_versao,
+       is_champion
+FROM por_minuto
+WHERE rn = 1
+ORDER BY minuto DESC;
+
+-- Serie minuto a minuto (ultimos 60 retreinos, mais simples)
+SELECT date_trunc('minute', from_iso8601_timestamp(dt_processamento)) AS minuto,
+       dt_processamento,
+       ROUND(rmse, 2) AS rmse,
+       ROUND(mape, 4) AS mape,
+       linhas_adicionadas,
+       modelo_versao,
+       is_champion
+FROM saldo_previsto_db_prod.tb_metricas_treino
+ORDER BY dt_processamento DESC
+LIMIT 60;
+
+-- Erro medio das predicoes por minuto de processamento (ultimas 2 horas)
+SELECT date_trunc('minute', from_iso8601_timestamp(dt_processamento)) AS minuto,
+       COUNT(*) AS registros,
+       ROUND(AVG(erro_percentual), 2) AS mape,
+       ROUND(AVG(erro_absoluto), 2) AS mae,
+       max(modelo_versao) AS modelo_versao
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+WHERE from_iso8601_timestamp(dt_processamento)
+      >= current_timestamp - interval '2' hour
+GROUP BY 1
+ORDER BY minuto DESC;

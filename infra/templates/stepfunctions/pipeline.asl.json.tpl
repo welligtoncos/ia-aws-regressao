@@ -1,7 +1,15 @@
 {
   "Comment": "Pipeline genérico: validação Lambda -> processamento Glue",
-  "StartAt": "ValidateInput",
+  "StartAt": "AssignRunId",
   "States": {
+    "AssignRunId": {
+      "Type": "Pass",
+      "Parameters": {
+        "run_id.$": "$$.Execution.Name",
+        "source_prefix.$": "$.source_prefix"
+      },
+      "Next": "ValidateInput"
+    },
     "ValidateInput": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",

@@ -33,15 +33,14 @@ def load_champion_metrics(bucket: str, model_path: str, region: str = "us-east-1
 
 
 def is_better_than_champion(new_metrics: Dict[str, float], champion_metrics: Optional[Dict[str, Any]]) -> bool:
+    """Promove apenas se RMSE e MAPE forem estritamente menores que o campeão."""
     if not champion_metrics:
         return True
     new_rmse = float(new_metrics["rmse"])
+    new_mape = float(new_metrics["mape"])
     champ_rmse = float(champion_metrics.get("rmse", float("inf")))
-    if new_rmse < champ_rmse - 1e-9:
-        return True
-    if abs(new_rmse - champ_rmse) <= 1e-9 and float(new_metrics["mape"]) < float(champion_metrics.get("mape", float("inf"))):
-        return True
-    return False
+    champ_mape = float(champion_metrics.get("mape", float("inf")))
+    return new_rmse < champ_rmse - 1e-9 and new_mape < champ_mape - 1e-9
 
 
 def _put_json(bucket: str, key: str, data: Dict[str, Any], region: str) -> None:
@@ -73,7 +72,7 @@ def maybe_promote_champion(
     model_path: str,
     region: str = "us-east-1",
 ) -> Dict[str, Any]:
-    """Promove run atual a campeão se RMSE/MAPE melhorarem vs champion atual."""
+    """Promove run atual a campeão se RMSE e MAPE melhorarem vs champion atual."""
     base = model_path.rstrip("/")
     champion_prefix = f"{base}/{CHAMPION_PREFIX}"
     run_id = meta.get("run_id", "manual")

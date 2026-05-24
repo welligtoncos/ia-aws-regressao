@@ -1,7 +1,16 @@
 {
   "Comment": "Pipeline ML: checa dados novos -> valida -> Glue -> finaliza",
-  "StartAt": "CheckNewData",
+  "StartAt": "AssignRunId",
   "States": {
+    "AssignRunId": {
+      "Type": "Pass",
+      "Comment": "run_id unico por execucao (historico Athena sem sobrescrever particao scheduled)",
+      "Parameters": {
+        "run_id.$": "$$.Execution.Name",
+        "source_prefix.$": "$.source_prefix"
+      },
+      "Next": "CheckNewData"
+    },
     "CheckNewData": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
