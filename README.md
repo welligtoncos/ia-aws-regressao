@@ -23,13 +23,76 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 | **Athena** `saldo_previsto_db_prod.tb_saldo_previsto_prod` | Predições, erro, `modelo_versao`, `dt_processamento` | Erro por segmento/mês; comparar versões após retreinos |
 | **Athena** `saldo_previsto_db_prod.tb_metricas_treino` | RMSE, MAPE, linhas adicionadas por `run_id` / `run_date` | Série temporal de qualidade entre retreinos (1 partição por execução SFN) |
 | **S3** `models/xgboost_saldo/metricas.json` | RMSE, MAE, R², MAPE do **último** treino | Snapshot da qualidade atual |
-| **S3** `models/xgboost_saldo/champion/` | Modelo XGBoost oficial (`model.ubj`), métricas e histórico de promoções | Versão usada quando RMSE/MAPE melhoram vs campeão anterior |
+| **S3** `models/xgboost_saldo/champion/` | Modelo XGBoost oficial (`model.ubj`), métricas e histórico de promoções | Versão salva quando **RMSE e MAPE** batem o campeão anterior |
 | **S3** `models/xgboost_saldo/feature_importance.json` | Variáveis que mais explicam o saldo | Interpretabilidade e auditoria |
 | **DynamoDB** `saldo-previsto-results-prod` | Status das execuções (validate → Glue → finalize) | Monitoramento operacional |
 
 Queries prontas em [`payloads/athena_queries.sql`](payloads/athena_queries.sql).
 
-**Erro por segmento (onde o modelo mais precisa melhorar):**
+### Model registry (champion)
+
+A cada retreino o Glue treina do zero e grava métricas. O artefato XGBoost (`.ubj`) **só é persistido** em `models/xgboost_saldo/champion/` quando o run **promove** o campeão:
+
+| Critério | Regra |
+|----------|--------|
+| Promoção | RMSE **e** MAPE estritamente menores que o champion atual |
+| `is_champion = true` | Run que gravou novo `model.ubj` no S3 |
+| `run_id` | Nome único da execução Step Functions (1 linha por retreino no Athena) |
+
+```powershell
+# Campeão oficial vs último treino
+aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/champion/champion_meta.json -
+aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
+```
+
+### Queries essenciais (Athena)
+
+Database: `saldo_previsto_db_prod`. Result location: `s3://saldo-previsto-data-prod/athena-results/`.
+
+**1. Evolução do treino** — histórico de qualidade (use no dia a dia):
+
+```sql
+SELECT dt_processamento,
+       run_id,
+       ROUND(rmse, 2) AS rmse,
+       ROUND(mape, 4) AS mape,
+       linhas_adicionadas,
+       total_linhas,
+       modelo_versao,
+       is_champion
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE run_id NOT IN ('scheduled', 'manual-001')
+ORDER BY dt_processamento DESC
+LIMIT 30;
+```
+
+**2. Tendência suavizada** — média móvel de 5 retreinos (filtra ruído do micro-lote):
+
+```sql
+SELECT dt_processamento,
+       ROUND(rmse, 2) AS rmse,
+       ROUND(mape, 4) AS mape,
+       ROUND(AVG(rmse) OVER (ORDER BY dt_processamento ROWS BETWEEN 4 PRECEDING), 2) AS rmse_media_5,
+       ROUND(AVG(mape) OVER (ORDER BY dt_processamento ROWS BETWEEN 4 PRECEDING), 4) AS mape_media_5,
+       is_champion
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE run_id NOT IN ('scheduled', 'manual-001')
+ORDER BY dt_processamento DESC
+LIMIT 30;
+```
+
+**3. Campeão atual** — versão oficial salva no S3:
+
+```sql
+SELECT dt_processamento, run_id, modelo_versao,
+       ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape
+FROM saldo_previsto_db_prod.tb_metricas_treino
+WHERE is_champion = true
+ORDER BY dt_processamento DESC
+LIMIT 5;
+```
+
+**4. Erro por segmento** — onde o modelo mais precisa melhorar:
 
 ```sql
 SELECT segmento,
@@ -41,27 +104,21 @@ GROUP BY segmento
 ORDER BY mape_medio DESC;
 ```
 
-**Evolução entre retreinos (compare `modelo_versao`):**
+**5. Comparar versões** — erro nas predições publicadas por `modelo_versao`:
 
 ```sql
 SELECT modelo_versao,
        MIN(dt_processamento) AS treinado_em,
-       ROUND(AVG(erro_percentual), 2) AS mape
+       COUNT(*) AS registros,
+       ROUND(AVG(erro_percentual), 2) AS mape,
+       ROUND(AVG(erro_absoluto), 2) AS mae
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 GROUP BY modelo_versao
-ORDER BY treinado_em;
+ORDER BY treinado_em DESC
+LIMIT 10;
 ```
 
-**Últimas métricas globais (CLI):**
-
-```powershell
-aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
-aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/champion/champion_meta.json -
-```
-
-A coluna `is_champion` em `tb_metricas_treino` indica runs que **promoveram** o modelo oficial (critério: **RMSE e MAPE** menores que o campeão anterior).
-
-Com o EventBridge ativo (`rate(1 minute)`), a cada ciclo com dados novos o pipeline gera uma nova `modelo_versao` — as queries acima formam a **série temporal de qualidade do modelo**.
+Com o EventBridge ativo (`rate(1 minute)`), há retreino a cada ~2 min (alternância treino / `SkipNoNewData`). Nem todo minuto gera linha em `tb_metricas_treino` — só quando o Glue treina.
 
 ### Ingestão incremental (prod — a cada 1 minuto)
 
@@ -78,13 +135,14 @@ ml_enable_check_new_data        = true
 Fluxo:
 
 1. **EventBridge** dispara o Step Functions a cada **1 minuto**
-2. **Lambda `check_new_data`** verifica:
+2. **Step Functions** atribui `run_id` = nome único da execução (`$$.Execution.Name`)
+3. **Lambda `check_new_data`** verifica:
    - CSVs novos em `s3://saldo-previsto-data-prod/incoming/` (ETag vs watermark DynamoDB)
    - Se passou o intervalo de **1 min** desde o último lote simulado
-3. Se **não há dados novos**, encerra sem treinar (`SkipNoNewData`)
-4. Se há dados, o **Glue** faz append de um **micro-lote** (+1 min na última `data_referencia`, ~2 clientes novos por lote) e/ou merge de CSVs em `incoming/`
-5. Retreina com split **temporal** e grava métricas em `tb_metricas_treino`
-6. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas
+4. Se **não há dados novos**, encerra sem treinar (`SkipNoNewData`)
+5. Se há dados, o **Glue** faz append de um **micro-lote** (+1 min na última `data_referencia`, ~2 clientes novos por lote) e/ou merge de CSVs em `incoming/`
+6. Retreina com split **temporal**, grava métricas em `tb_metricas_treino` (1 partição por `run_id`) e promove champion se RMSE **e** MAPE melhorarem
+7. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas; SFN encerra em `SkipGlueBusy` se o job anterior ainda estiver rodando
 
 Enviar CSV externo:
 
@@ -93,14 +151,6 @@ aws s3 cp meu_lote.csv s3://saldo-previsto-data-prod/incoming/meu_lote.csv
 ```
 
 O próximo ciclo (≤1 min) detecta o arquivo, treina e marca o ETag no DynamoDB (`__ingest_watermark__`).
-
-```sql
--- Evolução do modelo a cada retreino (micro-lotes de 1 min)
-SELECT run_date, run_id, total_linhas, linhas_adicionadas,
-       ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape, modelo_versao
-FROM saldo_previsto_db_prod.tb_metricas_treino
-ORDER BY dt_processamento DESC;
-```
 
 Teste manual da ingestão (sem treinar):
 
@@ -210,7 +260,7 @@ Para **religar**:
 aws events enable-rule --name saldo-previsto-schedule-prod --region us-east-1
 ```
 
-O modelo em `models/xgboost_saldo/` e as tabelas Athena continuam consultáveis com o agendamento desligado.
+O modelo em `models/xgboost_saldo/` (incluindo `champion/`) e as tabelas Athena continuam consultáveis com o agendamento desligado.
 
 ## Modos de operação
 
@@ -254,11 +304,14 @@ docs/              # Documentação
 | Athena Table (predições) | `tb_saldo_previsto_prod` |
 | Athena Table (métricas) | `tb_metricas_treino` |
 | EventBridge | `saldo-previsto-schedule-prod` (`rate(1 minute)`) |
+| Champion (S3) | `models/xgboost_saldo/champion/model.ubj` |
 
-Consulta Athena:
+Consulta rápida (predições):
 
 ```sql
-SELECT * FROM saldo_previsto_db_prod.tb_saldo_previsto_prod LIMIT 10;
+SELECT cliente_id, saldo_previsto, saldo_real, erro_percentual, modelo_versao
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+LIMIT 10;
 ```
 
 ## Licença / uso
