@@ -150,3 +150,4 @@ Runs com métricas vazadas (R² ~1) podem ter `is_champion = true`; runs honesto
 | `glue_bundle/train_pipeline.py` | Orquestração do retreino |
 | `payloads/athena_queries.sql` | SQL de monitoramento |
 | `docs/ANALISE_METRICAS_ATHENA.md` | Guia de análise no Athena (Rafo044, reconcile) |
+| `docs/FLUXO_TREINAMENTO_AWS.md` | Diagramas Mermaid: treinamento e serviços AWS (SFN, Glue, S3, Athena) |

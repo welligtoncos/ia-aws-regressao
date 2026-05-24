@@ -45,7 +45,7 @@ xgboost_params = {
 
 enable_glue_data_catalog = true
 
-# Ingestão micro a cada 1 min + detecção de arquivos novos
+# Ingestão: incoming/ real (Rafo044); sem append simulado no Glue
 ml_ingest_daily_simulated   = false
 ml_ingest_mode              = "micro"
 ml_incremental_step_minutes   = 2
@@ -68,6 +68,7 @@ lambda_role_arn = "arn:aws:iam::303238378103:role/saldo-previsto-lambda-role-pro
 lambda_artifact_bucket = "saldo-previsto-data-prod"
 lambda_artifact_key      = "builds/handler.zip"
 
-# EventBridge: dispara pipeline a cada 2 minutos (retreino; promoção exige RMSE >= 2% melhor)
-enable_eventbridge_schedule     = true
+# EventBridge: OFF em prod (treino via scripts ou start-execution manual)
+# Ao religar: rate(2 minutes) ou rate(15 minutes) + terraform apply
+enable_eventbridge_schedule     = false
 eventbridge_schedule_expression = "rate(2 minutes)"

@@ -1,6 +1,6 @@
 # AWS IA Regressão — Saldo Previsto
 
-Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena — com **ingestão incremental a cada 2 minutos** em produção (configurável).
+Template de automação AWS com pipeline ML **XGBoost** para previsão de saldo bancário. Combina S3, Glue, Lambda, Step Functions, EventBridge, DynamoDB e Athena. Em **prod** o agendamento EventBridge está **desligado**; retreinos são disparados por scripts (`run_rafo044_experiment`) ou `start-execution` / `start-job-run` manual (ver [`infra/inventories/prod/terraform.tfvars`](infra/inventories/prod/terraform.tfvars)).
 
 ## Proposta de valor
 
@@ -8,9 +8,9 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 
 | Para quem | Entrega |
 |-----------|---------|
-| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), retreino a cada **2 min**, métricas (RMSE, WAPE, por segmento) e feature importance no S3 |
+| **Engenharia de dados / ML** | Pipeline reprodutível (Glue + Step Functions), métricas (RMSE, WAPE, por segmento) e feature importance no S3; retreino agendável via EventBridge ou sob demanda |
 | **Analytics / negócio** | Tabela Athena com previsão vs. real, erro por cliente, segmento e período |
-| **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions |
+| **Operações** | Histórico de runs no DynamoDB, orquestração visível no Step Functions — diagrama: **[docs/FLUXO_TREINAMENTO_AWS.md](docs/FLUXO_TREINAMENTO_AWS.md)** |
 
 ### Insight principal
 
@@ -151,9 +151,15 @@ ORDER BY dt_processamento DESC
 LIMIT 30;
 ```
 
-Com EventBridge em `rate(2 minutes)`, há tentativa de pipeline a cada 2 min; linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`).
+Com EventBridge **habilitado** (`enable_eventbridge_schedule = true`), há tentativa de pipeline na cadência configurada (ex. `rate(2 minutes)`); linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`). Com o schedule **desligado** (estado atual em prod), use `--export-reports` ou Athena após cada treino manual.
 
 **Interpretação rápida:** prefira **WAPE** para conclusões; use **RMSE** para comparar runs; **MAPE**/`erro_percentual` só como diagnóstico. Guia completo (pós-reconcile, troubleshooting): [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
+
+### Treinamento e serviços AWS
+
+Fluxo de retreino (Step Functions → Lambda → Glue → S3 → Athena) e tabela de serviços AWS:
+
+**[docs/FLUXO_TREINAMENTO_AWS.md](docs/FLUXO_TREINAMENTO_AWS.md)**
 
 ### Dataset Rafo044 (banco sintético com série temporal)
 
@@ -167,18 +173,25 @@ python scripts/run_etl_rafo044.py --data-dir data/rafo044/repo/data --split-at 2
 python scripts/run_etl_rafo044.py --data-dir data/rafo044/repo/data --output data/dados_treino.csv --upload --bucket saldo-previsto-data-prod
 ```
 
-Com dados Rafo044 em produção, defina `ml_ingest_daily_simulated = false` para não misturar com o gerador aleatório interno.
+Em prod, `ml_ingest_daily_simulated = false` (já no `terraform.tfvars`): o Glue **não** gera micro-lotes aleatórios; só merge de `incoming/` + treino com `dados_treino.csv`.
 
-**Ingestão automática + gabarito no Athena:**
+**Ingestão Rafo044 (estado real em prod — sem EventBridge):**
+
+O agendamento automático está **pausado** (`enable_eventbridge_schedule = false`). Cada lote e cada treino são disparados pelos scripts (Step Functions ou Glue direto), não por cron na AWS.
 
 ```powershell
 cd C:\welligton-pos-IA\aws-ia-regressao
 python scripts/generate_rafo044_sample.py --customers 2000
 python scripts/automate_rafo044_ingest.py --init --upload
+# Opção A: um comando (recomendado)
+python scripts/run_rafo044_experiment.py --run-all --upload --wait-glue
+# Opção B: loop local (só upload; você dispara SFN/Glue ou use --run-all)
 python scripts/automate_rafo044_ingest.py --loop --interval-minutes 3 --upload
 ```
 
-Cada `--tick` envia um CSV novo em `incoming/`; o EventBridge (2 min) dispara treino. Compare predito vs realizado: `payloads/athena_queries.sql` (seção **Gabarito**).
+Compare predito vs realizado: `payloads/athena_queries.sql` (seção **Gabarito**) ou [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
+
+**Se religar o EventBridge** (`enable_eventbridge_schedule = true` + `terraform apply`), cada CSV em `incoming/` pode ser detectado no próximo ciclo (`rate(2 minutes)` no tfvars hoje; pode mudar para `rate(15 minutes)`).
 
 **Um único procedimento** (todos os lotes + treino após cada um + CSV de evolução):
 
@@ -240,41 +253,59 @@ ORDER BY dt_processamento DESC;
 
 Mais queries (gabarito por mês, segmento, champion): [`payloads/athena_queries.sql`](payloads/athena_queries.sql) e [`docs/ANALISE_METRICAS_ATHENA.md`](docs/ANALISE_METRICAS_ATHENA.md).
 
-### Ingestão incremental (prod — a cada 2 minutos)
+### Ingestão incremental (prod — estado real)
 
-Configuração em `infra/inventories/prod/terraform.tfvars`:
+Fonte de verdade: [`infra/inventories/prod/terraform.tfvars`](infra/inventories/prod/terraform.tfvars).
 
-```hcl
-eventbridge_schedule_expression = "rate(2 minutes)"
-ml_ingest_mode                  = "micro"
-ml_incremental_step_minutes     = 2
-ml_ingest_daily_simulated       = true
-ml_enable_check_new_data        = true
-```
+| Parâmetro | Valor em prod | Efeito |
+|-----------|---------------|--------|
+| `enable_eventbridge_schedule` | **`false`** | Pipeline **não** roda sozinho na AWS |
+| `eventbridge_schedule_expression` | `rate(2 minutes)` | Só usado se religar o schedule (reservado no tfvars) |
+| `ml_ingest_daily_simulated` | **`false`** | Sem dados aleatórios no Glue; Rafo044 / `incoming/` |
+| `ml_ingest_mode` | `micro` | Modo de ingestão (micro-lote quando simulado estiver ligado) |
+| `ml_incremental_step_minutes` | `2` | Passo temporal do simulador **só se** `ml_ingest_daily_simulated = true` |
+| `ml_enable_check_new_data` | `true` | Lambda detecta CSV novo em `incoming/` (ETag vs watermark) |
+| `glue_max_concurrent_runs` | `1` | Um Glue por vez; SFN pode retornar `SkipGlueBusy` |
 
-Fluxo:
+**Como o treino roda hoje (EventBridge off):**
 
-1. **EventBridge** dispara o Step Functions a cada **2 minutos**
-2. **Step Functions** define `run_id` = nome da execução
-3. **Lambda `check_new_data`**: CSVs novos em `incoming/` (ETag vs watermark) **ou** intervalo de **2 min** desde o último lote simulado
-4. Sem dados novos → `SkipNoNewData`
-5. Com dados → **Glue** append de micro-lote (+15 min na última `data_referencia`, ~2 clientes novos) e/ou merge de `incoming/`
-6. **Pré-processamento**: alvo = saldo do período seguinte; split temporal treino/val/teste
-7. Métricas globais + **`metricas_segmento`** em `tb_metricas_treino`; promoção champion se RMSE **≥ 2%** melhor
-8. **`MaxConcurrentRuns = 1`** no Glue; SFN pode encerrar em `SkipGlueBusy`
+1. Você envia dados (`automate_rafo044_ingest`, `run_rafo044_experiment`, ou `aws s3 cp` em `incoming/`).
+2. Dispara o pipeline manualmente: `run_rafo044_experiment` (`_start_sfn` / `start-job-run`), `aws stepfunctions start-execution`, ou `aws glue start-job-run`.
+3. **Step Functions** → **Lambda `check_new_data`** → se há chave nova em `incoming/` (ou simulado pendente, se ligado) → **Glue** merge + treino; senão `SkipNoNewData`.
+4. **Glue**: merge `INCOMING_KEYS`, `prepare_training_dataset`, XGBoost, métricas em `tb_metricas_treino`, predições em `tb_saldo_previsto_prod`.
+5. **Lambda finalize** atualiza watermark no DynamoDB.
 
-CSV externo:
+**Fluxo quando EventBridge estiver ligado** (`enable_eventbridge_schedule = true` + `terraform apply`):
+
+1. EventBridge dispara Step Functions na cadência (`rate(2 minutes)` no tfvars; opcional `rate(15 minutes)`).
+2. Mesmos passos 3–5; CSV em `incoming/` é detectado no **próximo** ciclo do schedule.
+
+CSV em `incoming/`:
 
 ```powershell
 aws s3 cp meu_lote.csv s3://saldo-previsto-data-prod/incoming/meu_lote.csv
+# Com EventBridge off: dispare o SFN ou Glue após o upload
+aws stepfunctions start-execution `
+  --state-machine-arn arn:aws:states:us-east-1:303238378103:stateMachine:saldo-previsto-sfn-prod `
+  --input file://payloads/sfn_input.json
 ```
 
-O próximo ciclo (≤15 min) detecta o arquivo e atualiza o watermark no DynamoDB.
-
-Teste manual da ingestão (sem treinar):
+Teste da Lambda de check (sem treinar):
 
 ```powershell
 python scripts/run_incremental_daily.py --run-id teste-micro-1
+```
+
+**Religar agendamento automático** (ex. a cada 15 min):
+
+```hcl
+enable_eventbridge_schedule     = true
+eventbridge_schedule_expression = "rate(15 minutes)"
+```
+
+```powershell
+cd infra
+terraform apply "-var-file=inventories/prod/terraform.tfvars"
 ```
 
 <details>
@@ -319,52 +350,40 @@ aws stepfunctions start-execution `
 
 ## Arquitetura
 
-```mermaid
-flowchart LR
-  EB[EventBridge 15min]
-  SFN[Step Functions]
-  L1[Lambda check]
-  G[Glue XGBoost]
-  L2[Lambda finalize]
-  S3[(S3)]
-  ATH[Athena]
-  DDB[(DynamoDB)]
+Diagrama completo (treinamento, serviços AWS, etapas do Glue): **[docs/FLUXO_TREINAMENTO_AWS.md](docs/FLUXO_TREINAMENTO_AWS.md)**.
 
-  EB --> SFN --> L1
-  L1 -->|dados novos| G
-  L1 -->|sem dados| Skip[SkipNoNewData]
-  G --> S3
-  G -->|metricas + champion| S3
-  G --> L2 --> DDB
-  S3 --> ATH
-```
+## Pausar / religar o pipeline
 
-## Desligar o pipeline
+**Estado atual em prod:** `enable_eventbridge_schedule = false` no Terraform — retreino **não** é automático. Treinos vêm de `run_rafo044_experiment`, `start-execution` ou `glue start-job-run`.
 
-**Imediato:**
+**Pausar agendamento** (se estiver ligado na AWS):
 
 ```powershell
 aws events disable-rule --name saldo-previsto-schedule-prod --region us-east-1
 ```
 
-**Terraform** (`infra/inventories/prod/terraform.tfvars`):
-
 ```hcl
+# infra/inventories/prod/terraform.tfvars
 enable_eventbridge_schedule = false
 ```
 
-Parar só ingestão simulada (treina só com `incoming/`):
+**Religar agendamento:**
+
+```hcl
+enable_eventbridge_schedule     = true
+eventbridge_schedule_expression = "rate(2 minutes)"   # ou rate(15 minutes)
+```
+
+```powershell
+cd infra
+terraform apply "-var-file=inventories/prod/terraform.tfvars"
+aws events enable-rule --name saldo-previsto-schedule-prod --region us-east-1
+```
+
+**Só dados reais em `incoming/`** (sem simulador no Glue) — já é o padrão em prod:
 
 ```hcl
 ml_ingest_daily_simulated = false
-```
-
-O EventBridge continua em 2 min, mas encerra em `SkipNoNewData` até haver CSV em `incoming/`.
-
-**Religar:**
-
-```powershell
-aws events enable-rule --name saldo-previsto-schedule-prod --region us-east-1
 ```
 
 ## Modos de operação
@@ -385,7 +404,7 @@ workloads/shared/     # incremental_data, model_registry, target
 infra/                # Terraform
 scripts/              # Deploy e generate_dataset
 payloads/             # SFN input + athena_queries.sql
-docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md, ANALISE_METRICAS_ATHENA.md
+docs/                 # GUIA_INSTALACAO, DATA_MODEL, FLUXO_TREINAMENTO_AWS, ANALISE_METRICAS_ATHENA
 ```
 
 ## Comandos
@@ -408,7 +427,7 @@ docs/                 # GUIA_INSTALACAO.md, DATA_MODEL.md, ANALISE_METRICAS_ATHE
 | Athena DB | `saldo_previsto_db_prod` |
 | Predições | `tb_saldo_previsto_prod` |
 | Métricas treino | `tb_metricas_treino` |
-| EventBridge | `saldo-previsto-schedule-prod` (`rate(2 minutes)`) |
+| EventBridge | `saldo-previsto-schedule-prod` — **desligado** (`enable_eventbridge_schedule = false`; expressão reservada `rate(2 minutes)`) |
 | Champion | `models/xgboost_saldo/champion/model.ubj` |
 
 ## Licença / uso
