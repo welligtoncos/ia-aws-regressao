@@ -46,7 +46,7 @@ xgboost_params = {
 enable_glue_data_catalog = true
 
 # Ingestão micro a cada 1 min + detecção de arquivos novos
-ml_ingest_daily_simulated   = true
+ml_ingest_daily_simulated   = false
 ml_ingest_mode              = "micro"
 ml_incremental_step_minutes   = 2
 ml_incremental_new_clients    = 10

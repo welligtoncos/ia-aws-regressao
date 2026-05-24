@@ -109,7 +109,7 @@ class Preprocessor:
 
         for col in COLUNAS_BOOLEANAS:
             if col in work.columns:
-                work[col] = work[col].astype(int)
+                work[col] = work[col].fillna(0).astype(int)
 
         cols_norm = [c for c in COLUNAS_NORMALIZAR if c in work.columns]
         if cols_norm:
@@ -132,7 +132,7 @@ class Preprocessor:
 
         for col in COLUNAS_BOOLEANAS:
             if col in work.columns:
-                work[col] = work[col].astype(int)
+                work[col] = work[col].fillna(0).astype(int)
 
         cols_norm = [c for c in COLUNAS_NORMALIZAR if c in work.columns]
         if cols_norm:

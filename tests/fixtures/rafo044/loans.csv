@@ -1,0 +1,2 @@
+loan_id,customer_id,loan_type,principal_amount,interest_rate,loan_term_months,start_date,end_date,payment_frequency,loan_status,past_due_amount
+LN000001,CUST000002,personal,10000.0,5.0,12,2015-06-01,2016-06-01,monthly,active,0.0

@@ -75,6 +75,45 @@ WHERE segmento = 'VAREJO'
 LIMIT 20;
 
 -- =============================================================================
+-- Gabarito: predito vs realizado (holdout de teste por cliente)
+-- saldo_realizado = valor observado (gabarito); saldo_predito = modelo
+-- =============================================================================
+
+-- Amostra cliente a cliente (último run / modelo)
+SELECT cliente_id,
+       segmento,
+       ano,
+       mes,
+       ROUND(COALESCE(saldo_predito, saldo_previsto), 2) AS saldo_predito,
+       ROUND(COALESCE(saldo_realizado, saldo_real), 2) AS gabarito_saldo_realizado,
+       ROUND(erro_absoluto, 2) AS erro_absoluto,
+       ROUND(erro_percentual, 2) AS erro_pct_diag,
+       modelo_versao,
+       run_id,
+       dt_processamento
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+ORDER BY dt_processamento DESC, segmento, cliente_id
+LIMIT 100;
+
+-- Gabarito agregado por segmento (último modelo_versao publicado)
+WITH ultimo_modelo AS (
+  SELECT modelo_versao
+  FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
+  ORDER BY dt_processamento DESC
+  LIMIT 1
+)
+SELECT p.segmento,
+       COUNT(*) AS registros,
+       ROUND(AVG(COALESCE(p.saldo_predito, p.saldo_previsto)), 2) AS media_predito,
+       ROUND(AVG(COALESCE(p.saldo_realizado, p.saldo_real)), 2) AS media_gabarito,
+       ROUND(AVG(COALESCE(p.saldo_predito, p.saldo_previsto) - COALESCE(p.saldo_realizado, p.saldo_real)), 2) AS vies_medio,
+       ROUND(100.0 * SUM(p.erro_absoluto) / NULLIF(SUM(ABS(COALESCE(p.saldo_realizado, p.saldo_real))), 0), 2) AS wape_pct
+FROM saldo_previsto_db_prod.tb_saldo_previsto_prod p
+INNER JOIN ultimo_modelo u ON p.modelo_versao = u.modelo_versao
+GROUP BY p.segmento
+ORDER BY p.segmento;
+
+-- =============================================================================
 -- Metricas de treino (tb_metricas_treino) — RMSE, WAPE, R2 por run
 -- =============================================================================
 

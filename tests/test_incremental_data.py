@@ -12,6 +12,19 @@ def test_bootstrap_dataset_shape():
     assert "saldo_alvo" in df.columns
 
 
+def test_gerar_lote_diario_com_ids_cust():
+    from pathlib import Path
+    from datetime import datetime
+
+    from workloads.shared.rafo044_etl import build_monthly_panel
+
+    panel = build_monthly_panel(Path("tests/fixtures/rafo044"), min_months_history=2)
+    lote = gerar_lote_diario(panel, datetime(2015, 8, 1), new_clients=2, seed=3)
+    n_clientes = panel["cliente_id"].nunique()
+    assert len(lote) == n_clientes + 2
+    assert all(str(c).startswith("CUST") for c in lote["cliente_id"].tail(2))
+
+
 def test_gerar_lote_diario_incrementa_linhas():
     base = bootstrap_dataset(n_clientes=50, n_meses=2, seed=2)
     ultima = pd.to_datetime(base["data_referencia"]).max().to_pydatetime()

@@ -17,6 +17,18 @@ lint:
 generate-data:
 	$(PYTHON) scripts/run_generate_dataset.py --local-only --clientes 5000 --meses 10
 
+etl-rafo044:
+	$(PYTHON) scripts/run_etl_rafo044.py --data-dir data/rafo044/raw --output data/dados_treino.csv
+
+etl-rafo044-upload:
+	$(PYTHON) scripts/run_etl_rafo044.py --data-dir data/rafo044/raw --output data/dados_treino.csv --upload
+
+rafo044-auto-init:
+	$(PYTHON) scripts/automate_rafo044_ingest.py --init --upload
+
+rafo044-auto-tick:
+	$(PYTHON) scripts/automate_rafo044_ingest.py --tick --upload
+
 generate-data-s3:
 	$(PYTHON) scripts/run_generate_dataset.py --clientes 5000 --meses 10 --bucket sample-data-dev
 

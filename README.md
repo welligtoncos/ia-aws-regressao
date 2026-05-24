@@ -140,6 +140,31 @@ LIMIT 30;
 
 Com EventBridge em `rate(2 minutes)`, há tentativa de pipeline a cada 2 min; linha em `tb_metricas_treino` só quando o Glue **efetivamente treina** (sem `SkipNoNewData` / `SkipGlueBusy`).
 
+### Dataset Rafo044 (banco sintético com série temporal)
+
+Fonte: [Rafo044/Synthetic_Bank_Dataset](https://github.com/Rafo044/Synthetic_Bank_Dataset). O repositório remoto pode não incluir `transactions.parquet`; gere com `scripts/synthetic_data_create.py` (polars + faker) e use a pasta `data/` ou `synthetic_output/`.
+
+```powershell
+python scripts/run_etl_rafo044.py --clone data/rafo044/repo
+# após gerar transactions.parquet no clone:
+python scripts/run_etl_rafo044.py --data-dir data/rafo044/repo/data --output data/dados_treino.csv --max-customers 5000
+python scripts/run_etl_rafo044.py --data-dir data/rafo044/repo/data --split-at 2016-02 --output data/dados_treino.csv --incoming-output data/incoming/lote_2016-02.csv
+python scripts/run_etl_rafo044.py --data-dir data/rafo044/repo/data --output data/dados_treino.csv --upload --bucket saldo-previsto-data-prod
+```
+
+Com dados Rafo044 em produção, defina `ml_ingest_daily_simulated = false` para não misturar com o gerador aleatório interno.
+
+**Ingestão automática + gabarito no Athena:**
+
+```powershell
+cd C:\welligton-pos-IA\aws-ia-regressao
+python scripts/generate_rafo044_sample.py --customers 2000
+python scripts/automate_rafo044_ingest.py --init --upload
+python scripts/automate_rafo044_ingest.py --loop --interval-minutes 3 --upload
+```
+
+Cada `--tick` envia um CSV novo em `incoming/`; o EventBridge (2 min) dispara treino. Compare predito vs realizado: `payloads/athena_queries.sql` (seção **Gabarito**).
+
 ### Ingestão incremental (prod — a cada 2 minutos)
 
 Configuração em `infra/inventories/prod/terraform.tfvars`:

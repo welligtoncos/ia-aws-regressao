@@ -10,6 +10,20 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _safe_int(value, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except TypeError:
+        pass
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def save_metrics_history(metricas, meta, bucket, table, database, region="us-east-1"):
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -21,8 +35,8 @@ def save_metrics_history(metricas, meta, bucket, table, database, region="us-eas
         **metricas,
         "modelo_versao": meta.get("modelo_versao", ""),
         "dt_processamento": datetime.now(timezone.utc).isoformat(),
-        "total_linhas": int(meta.get("total_linhas", 0)),
-        "linhas_adicionadas": int(meta.get("linhas_adicionadas", 0)),
+        "total_linhas": _safe_int(meta.get("total_linhas", 0)),
+        "linhas_adicionadas": _safe_int(meta.get("linhas_adicionadas", 0)),
         "data_referencia_lote": meta.get("data_referencia_lote", ""),
         "is_champion": bool(meta.get("is_champion", False)),
         "champion_modelo_versao": meta.get("champion_modelo_versao") or "",

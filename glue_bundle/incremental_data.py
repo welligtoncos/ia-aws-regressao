@@ -97,6 +97,20 @@ def bootstrap_dataset(n_clientes: int, n_meses: int, seed: int = 42) -> pd.DataF
     return pd.DataFrame(linhas)
 
 
+def _next_client_index(cliente_ids: pd.Series) -> int:
+    for pattern in (r"CUST(\d+)", r"CLI_(\d+)"):
+        nums = pd.to_numeric(cliente_ids.str.extract(pattern, expand=False), errors="coerce")
+        if nums.notna().any():
+            return int(nums.max()) + 1
+    return int(cliente_ids.nunique()) + 1
+
+
+def _format_client_id(index: int, sample_id: str) -> str:
+    if str(sample_id).upper().startswith("CUST"):
+        return f"CUST{index:06d}"
+    return f"CLI_{str(index).zfill(5)}"
+
+
 def gerar_lote_diario(df_existente: pd.DataFrame, data_ref: datetime, new_clients: int = 0, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed + int(data_ref.strftime("%Y%m%d%H%M")))
     linhas = []
@@ -114,10 +128,11 @@ def gerar_lote_diario(df_existente: pd.DataFrame, data_ref: datetime, new_client
         linhas.append(_linha_para_data(perfil, data_ref, rng, saldo_seed=saldo_seed))
 
     if new_clients > 0:
-        max_id = df_existente["cliente_id"].str.extract(r"CLI_(\d+)")[0].astype(int).max()
-        start = int(max_id) + 1 if pd.notna(max_id) else 1
+        sample_id = str(df_existente["cliente_id"].iloc[0])
+        start = _next_client_index(df_existente["cliente_id"])
         for i in range(start, start + new_clients):
-            perfil = _gerar_perfil_cliente(f"CLI_{str(i).zfill(5)}", rng)
+            cid = _format_client_id(i, sample_id)
+            perfil = _gerar_perfil_cliente(cid, rng)
             linhas.append(_linha_para_data(perfil, data_ref, rng))
 
     return pd.DataFrame(linhas)
