@@ -76,6 +76,7 @@ module "glue_standalone_job" {
   python_shell_capacity      = var.glue_python_shell_capacity
   number_of_workers          = var.glue_number_of_workers
   worker_type                = var.glue_worker_type
+  max_concurrent_runs        = var.glue_max_concurrent_runs
   tags                       = local.common_tags
 }
 
@@ -154,6 +155,18 @@ module "glue_data_catalog" {
   table_name    = var.ml_output_table
   s3_location   = local.glue_catalog_s3_location
   tags          = local.common_tags
+}
+
+module "glue_metrics_catalog" {
+  source = "./modules/glue/catalog-metrics"
+  count  = var.enable_glue_data_catalog && var.ml_output_database != "" && var.ml_metrics_table != "" ? 1 : 0
+
+  database_name = var.ml_output_database
+  table_name    = var.ml_metrics_table
+  s3_location   = local.glue_metrics_s3_location
+  tags          = local.common_tags
+
+  depends_on = [module.glue_data_catalog]
 }
 
 # ==============================================================================

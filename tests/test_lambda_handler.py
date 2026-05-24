@@ -30,6 +30,33 @@ def test_lambda_validate(mock_s3_client, mock_save):
 
 
 @patch("workloads.aws_lambda.src.handler.save_run_result")
+@patch("workloads.aws_lambda.src.handler.check_new_data")
+def test_lambda_check_new_data(mock_check, mock_save):
+    os.environ["SOURCE_BUCKET"] = "test-bucket"
+    os.environ["DYNAMODB_TABLE"] = "test-table"
+    os.environ["INCOMING_PREFIX"] = "incoming/"
+    os.environ["INGEST_SIMULATED"] = "true"
+    os.environ["INGEST_MODE"] = "micro"
+    os.environ["INGEST_STEP_MINUTES"] = "10"
+
+    mock_check.return_value = {
+        "has_new_data": True,
+        "new_file_keys": ["incoming/batch.csv"],
+        "simulated_due": True,
+        "incoming_count": 1,
+    }
+
+    response = lambda_handler({"action": "check_new_data", "run_id": "run-2"}, FakeContext())
+    body = json.loads(response["body"])
+
+    assert response["statusCode"] == 200
+    assert body["status"] == "new_data"
+    assert body["has_new_data"] is True
+    mock_check.assert_called_once()
+    mock_save.assert_called_once()
+
+
+@patch("workloads.aws_lambda.src.handler.save_run_result")
 def test_lambda_finalize(mock_save):
     os.environ["DYNAMODB_TABLE"] = "test-table"
 

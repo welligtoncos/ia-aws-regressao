@@ -48,3 +48,27 @@ def register_partitions(df, bucket, database, table, prefix, region="us-east-1")
                 PartitionInput=part_input,
             )
             logger.info("Partição atualizada: %s", "/".join(values))
+
+
+def register_metrics_partition(bucket, database, table, run_date, run_id, prefix, region="us-east-1"):
+    if not database or not table:
+        return
+    glue = boto3.client("glue", region_name=region)
+    table_meta = glue.get_table(DatabaseName=database, Name=table)["Table"]
+    location = f"s3://{bucket}/{prefix.strip('/')}/run_date={run_date}/run_id={run_id}/"
+    values = [run_date, run_id]
+    part_input = {
+        "Values": values,
+        "StorageDescriptor": _partition_descriptor(table_meta, location),
+    }
+    try:
+        glue.create_partition(DatabaseName=database, TableName=table, PartitionInput=part_input)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "AlreadyExistsException":
+            raise
+        glue.update_partition(
+            DatabaseName=database,
+            TableName=table,
+            PartitionValueList=values,
+            PartitionInput=part_input,
+        )

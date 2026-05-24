@@ -45,6 +45,17 @@ xgboost_params = {
 
 enable_glue_data_catalog = true
 
+# Ingestão micro a cada 10 min + detecção de arquivos novos
+ml_ingest_daily_simulated   = true
+ml_ingest_mode              = "micro"
+ml_incremental_step_minutes   = 10
+ml_incremental_new_clients    = 10
+ml_incremental_seed_clientes  = 5000
+ml_incoming_prefix            = "incoming/"
+ml_enable_check_new_data      = true
+ml_metrics_table              = "tb_metricas_treino"
+glue_max_concurrent_runs      = 1
+
 # Pipeline: Lambda -> Glue -> Lambda
 enable_lambda            = true
 enable_stepfunctions     = true
@@ -57,6 +68,6 @@ lambda_role_arn = "arn:aws:iam::303238378103:role/saldo-previsto-lambda-role-pro
 lambda_artifact_bucket = "saldo-previsto-data-prod"
 lambda_artifact_key      = "builds/handler.zip"
 
-# Retreino agendado (06:00 UTC) — habilitar quando IAM permitir events:TagResource
+# EventBridge: dispara pipeline a cada 10 minutos
 enable_eventbridge_schedule     = true
-eventbridge_schedule_expression = "cron(0 6 * * ? *)"   # 06:00 UTC diário
+eventbridge_schedule_expression = "rate(10 minutes)"

@@ -1,0 +1,39 @@
+"""Persiste histórico de métricas && run para evolução no Athena."""
+
+import logging
+from datetime import datetime, timezone
+
+import boto3
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def save_metrics_history(metricas, meta, bucket, table, database, region="us-east-1"):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from catalog_sync import register_metrics_partition
+
+    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    run_id = meta.get("run_id", "manual")
+    row = {
+        **metricas,
+        "modelo_versao": meta.get("modelo_versao", ""),
+        "dt_processamento": datetime.now(timezone.utc).isoformat(),
+        "total_linhas": int(meta.get("total_linhas", 0)),
+        "linhas_adicionadas": int(meta.get("linhas_adicionadas", 0)),
+        "data_referencia_lote": meta.get("data_referencia_lote", ""),
+    }
+    df = pd.DataFrame([row])
+    prefix = f"processed/{table}"
+    key = f"{prefix}/run_date={run_date}/run_id={run_id}/metrics.parquet"
+
+    import io
+    buf = io.BytesIO()
+    pq.write_table(pa.Table.from_pandas(df), buf)
+    boto3.client("s3", region_name=region).put_object(
+        Bucket=bucket, Key=key, Body=buf.getvalue()
+    )
+    if database:
+        register_metrics_partition(bucket, database, table, run_date, run_id, prefix, region)
+    logger.info("Métricas históricas: s3://%s/%s", bucket, key)

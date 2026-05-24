@@ -41,27 +41,42 @@ locals {
       "--MODE"             = var.ml_mode
       "--MODEL_OUTPUT_PATH" = var.ml_model_output_path
       "--XGBOOST_PARAMS"   = jsonencode(var.xgboost_params)
+      "--INGEST_DAILY"              = var.ml_ingest_daily_simulated ? "true" : "false"
+      "--INGEST_MODE"               = var.ml_ingest_mode
+      "--INCREMENTAL_STEP_MINUTES" = tostring(var.ml_incremental_step_minutes)
+      "--INCREMENTAL_NEW_CLIENTS"   = tostring(var.ml_incremental_new_clients)
+      "--INCREMENTAL_SEED_CLIENTES" = tostring(var.ml_incremental_seed_clientes)
+      "--METRICS_TABLE"             = var.ml_metrics_table
+      "--METRICS_DATABASE"          = var.ml_output_database
     }
   )
 
   lambda_env = merge(
     var.lambda_environment_variables,
     {
-      SOURCE_BUCKET  = local.source_bucket_name
-      OUTPUT_BUCKET  = local.output_bucket_name
-      DYNAMODB_TABLE = local.dynamodb_table_name
-      PROJECT_NAME   = var.project_name
-      ENVIRONMENT    = var.environment
+      SOURCE_BUCKET       = local.source_bucket_name
+      OUTPUT_BUCKET       = local.output_bucket_name
+      DYNAMODB_TABLE      = local.dynamodb_table_name
+      PROJECT_NAME        = var.project_name
+      ENVIRONMENT         = var.environment
+      INCOMING_PREFIX     = var.ml_incoming_prefix
+      INGEST_SIMULATED    = var.ml_ingest_daily_simulated ? "true" : "false"
+      INGEST_MODE         = var.ml_ingest_mode
+      INGEST_STEP_MINUTES = tostring(var.ml_incremental_step_minutes)
     }
   )
 
   glue_catalog_s3_location = "s3://${local.output_bucket_name}/processed/${var.ml_output_table}/"
+  glue_metrics_s3_location = "s3://${local.output_bucket_name}/processed/${var.ml_metrics_table}/"
 
   sfn_definition = var.sfn_definition != "" ? var.sfn_definition : (
-    var.sfn_use_pipeline_template ? templatefile("${path.root}/templates/stepfunctions/pipeline.asl.json.tpl", {
-      lambda_function_name = local.lambda_function_name
-      glue_job_name        = local.glue_job_name
-      dynamodb_table_name  = local.dynamodb_table_name
-    }) : file("${path.root}/../workloads/stepfunctions/definitions/sample.asl.json")
+    var.sfn_use_pipeline_template ? templatefile(
+      var.ml_enable_check_new_data ? "${path.root}/templates/stepfunctions/pipeline-ml.asl.json.tpl" : "${path.root}/templates/stepfunctions/pipeline.asl.json.tpl",
+      {
+        lambda_function_name = local.lambda_function_name
+        glue_job_name        = local.glue_job_name
+        dynamodb_table_name  = local.dynamodb_table_name
+      }
+    ) : file("${path.root}/../workloads/stepfunctions/definitions/sample.asl.json")
   )
 }

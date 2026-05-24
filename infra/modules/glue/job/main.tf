@@ -20,6 +20,10 @@ resource "aws_glue_job" "this" {
 
   glue_version = var.glue_command_type == "pythonshell" ? "3.0" : "4.0"
 
+  execution_property {
+    max_concurrent_runs = var.max_concurrent_runs
+  }
+
   max_capacity      = var.glue_command_type == "pythonshell" ? var.python_shell_capacity : null
   number_of_workers = var.glue_command_type == "glueetl" ? var.number_of_workers : null
   worker_type       = var.glue_command_type == "glueetl" ? var.worker_type : null

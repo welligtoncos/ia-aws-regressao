@@ -63,3 +63,8 @@ output "athena_s3_location" {
   description = "Location S3 dos Parquet de resultado."
   value       = try(module.glue_data_catalog[0].s3_location, null)
 }
+
+output "athena_metrics_table" {
+  description = "Tabela Athena com evolução de métricas por run."
+  value       = try(module.glue_metrics_catalog[0].athena_query_table, null)
+}

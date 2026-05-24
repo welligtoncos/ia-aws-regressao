@@ -21,6 +21,7 @@ Automatizar o **treino, a validação e a publicação** de previsões de saldo 
 | Fonte | O que mostra | Uso |
 |-------|----------------|-----|
 | **Athena** `saldo_previsto_db_prod.tb_saldo_previsto_prod` | Predições, erro, `modelo_versao`, `dt_processamento` | Erro por segmento/mês; comparar versões após retreinos |
+| **Athena** `saldo_previsto_db_prod.tb_metricas_treino` | RMSE, MAPE, linhas adicionadas por `run_id` / `run_date` | Série temporal de qualidade entre retreinos |
 | **S3** `models/xgboost_saldo/metricas.json` | RMSE, MAE, R², MAPE do **último** treino | Snapshot da qualidade atual |
 | **S3** `models/xgboost_saldo/feature_importance.json` | Variáveis que mais explicam o saldo | Interpretabilidade e auditoria |
 | **DynamoDB** `saldo-previsto-results-prod` | Status das execuções (validate → Glue → finalize) | Monitoramento operacional |
@@ -58,6 +59,50 @@ aws s3 cp s3://saldo-previsto-data-prod/models/xgboost_saldo/metricas.json -
 
 Com o EventBridge ativo, cada execução gera nova `modelo_versao` — as queries acima passam a formar a **série temporal de qualidade do modelo**.
 
+### Ingestão micro (10 min) + arquivos externos
+
+Com `ml_ingest_mode = "micro"` e `eventbridge_schedule_expression = "rate(10 minutes)"`:
+
+1. **EventBridge** dispara o Step Functions a cada 10 minutos
+2. **Lambda `check_new_data`** verifica:
+   - CSVs novos em `s3://<bucket>/incoming/` (por ETag vs watermark DynamoDB)
+   - Se passou o intervalo para lote simulado (`INGEST_STEP_MINUTES`)
+3. Se **não há dados novos**, o pipeline encerra sem treinar (`SkipNoNewData`)
+4. Se há dados, o **Glue** faz append micro (+10 min na última data, menos clientes novos por lote) e/ou merge dos CSVs de `incoming/`
+5. **Glue `MaxConcurrentRuns = 1`** evita execuções sobrepostas
+
+Enviar CSV externo:
+
+```powershell
+aws s3 cp meu_lote.csv s3://saldo-previsto-data-prod/incoming/meu_lote.csv
+```
+
+O próximo ciclo detecta o arquivo, treina e marca o ETag como processado no DynamoDB (`__ingest_watermark__`).
+
+### Ingestão diária simulada (modo legacy)
+
+Com `ml_ingest_mode = "daily"`, **antes de cada treino** o Glue:
+
+1. **Append** de um lote diário no CSV (`raw/saldo_previsto/dados_treino.csv`)
+2. Adiciona **10 clientes novos** por dia (configurável)
+3. Salva auditoria em `landing/dt=YYYY-MM-DD/run_id=.../batch.csv`
+4. Retreina com split **temporal** (80% datas antigas / 20% recentes)
+5. Grava histórico de métricas em `tb_metricas_treino` (Athena)
+
+```sql
+-- Evolução do modelo ao longo dos dias
+SELECT run_date, run_id, total_linhas, linhas_adicionadas,
+       ROUND(rmse, 2) AS rmse, ROUND(mape, 4) AS mape, modelo_versao
+FROM saldo_previsto_db_prod.tb_metricas_treino
+ORDER BY dt_processamento;
+```
+
+Teste manual da ingestão (sem treinar):
+
+```powershell
+python scripts/run_incremental_daily.py --run-id teste-dia-1
+```
+
 
 **[Guia completo de instalação e testes → docs/GUIA_INSTALACAO.md](docs/GUIA_INSTALACAO.md)**
 
@@ -70,9 +115,14 @@ Inclui arquitetura, pré-requisitos, deploy passo a passo, testes (local, Glue, 
 pip install -r requirements.txt
 pytest tests/ -v
 
-# 2. Assets no S3
+# 2. Assets no S3 (obrigatório após mudanças no código)
 .\scripts\upload_glue_assets.ps1 -Bucket saldo-previsto-data-prod
 .\scripts\package_lambda.ps1 -Bucket saldo-previsto-data-prod -Upload
+aws lambda update-function-code `
+  --function-name saldo-previsto-lambda-prod `
+  --s3-bucket saldo-previsto-data-prod `
+  --s3-key builds/handler.zip `
+  --region us-east-1
 
 # 3. Infraestrutura
 cd infra
@@ -89,17 +139,57 @@ aws stepfunctions start-execution `
 
 ```mermaid
 flowchart LR
-  EB[EventBridge]
+  EB[EventBridge 10min]
   SFN[Step Functions]
-  L[Lambda]
+  L1[Lambda check/validate]
   G[Glue XGBoost]
+  L2[Lambda finalize]
   S3[(S3)]
   ATH[Athena]
+  DDB[(DynamoDB watermark)]
 
-  EB --> SFN --> L
-  SFN --> G --> S3
+  EB --> SFN --> L1
+  L1 -->|dados novos| G
+  L1 -->|sem dados| Skip[SkipNoNewData]
+  G --> S3
+  G --> L2 --> DDB
   S3 --> ATH
 ```
+
+## Desligar o pipeline
+
+Para **parar treinos automáticos** sem apagar modelo, predições ou tabelas Athena:
+
+**Imediato (CLI):**
+
+```powershell
+aws events disable-rule --name saldo-previsto-schedule-prod --region us-east-1
+```
+
+**Permanente (Terraform)** — em `infra/inventories/prod/terraform.tfvars`:
+
+```hcl
+enable_eventbridge_schedule = false
+```
+
+```powershell
+cd infra
+terraform apply "-var-file=inventories/prod/terraform.tfvars"
+```
+
+Para **parar só a ingestão simulada** (pipeline roda apenas com CSV em `incoming/`):
+
+```hcl
+ml_ingest_daily_simulated = false
+```
+
+Para **religar**:
+
+```powershell
+aws events enable-rule --name saldo-previsto-schedule-prod --region us-east-1
+```
+
+O modelo em `models/xgboost_saldo/` e as tabelas Athena continuam consultáveis com o agendamento desligado.
 
 ## Modos de operação
 
@@ -140,7 +230,9 @@ docs/              # Documentação
 | Glue Job | `saldo-previsto-glue-job-prod` |
 | Step Functions | `saldo-previsto-sfn-prod` |
 | Athena DB | `saldo_previsto_db_prod` |
-| Athena Table | `tb_saldo_previsto_prod` |
+| Athena Table (predições) | `tb_saldo_previsto_prod` |
+| Athena Table (métricas) | `tb_metricas_treino` |
+| EventBridge | `saldo-previsto-schedule-prod` (`rate(10 minutes)`) |
 
 Consulta Athena:
 

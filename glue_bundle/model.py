@@ -87,7 +87,7 @@ def salvar_json_s3(data, bucket, key, region="us-east-1"):
     )
 
 
-def gerar_predicoes_output(df_original, y_pred, y_real, modelo_versao):
+def gerar_predicoes_output(df_original, y_pred, y_real, modelo_versao, run_id="manual"):
     saldo_real = y_real if y_real is not None else df_original.get(TARGET, pd.Series(y_pred)).values
     out = pd.DataFrame({
         "cliente_id": df_original["cliente_id"].values,
@@ -98,6 +98,7 @@ def gerar_predicoes_output(df_original, y_pred, y_real, modelo_versao):
         "uf": df_original["uf"].values,
         "dt_processamento": datetime.now(timezone.utc).isoformat(),
         "modelo_versao": modelo_versao,
+        "run_id": run_id,
     })
     out["erro_absoluto"] = (out["saldo_real"] - out["saldo_previsto"]).abs()
     out["erro_percentual"] = np.where(out["saldo_real"] != 0, out["erro_absoluto"] / out["saldo_real"].abs() * 100, 0)

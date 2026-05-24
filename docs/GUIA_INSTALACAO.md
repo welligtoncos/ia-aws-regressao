@@ -378,7 +378,31 @@ Mais queries em `payloads/athena_queries.sql`.
 
 ## 8. Agendamento (EventBridge)
 
-Cron configurado em prod:
+### Modo micro (prod — a cada 10 minutos)
+
+```hcl
+eventbridge_schedule_expression = "rate(10 minutes)"
+ml_ingest_mode                  = "micro"
+ml_incremental_step_minutes     = 10
+ml_enable_check_new_data        = true
+glue_max_concurrent_runs        = 1
+```
+
+Fluxo Step Functions (`pipeline-ml.asl.json.tpl`):
+
+1. Lambda `check_new_data` — arquivos novos em `incoming/` ou lote simulado pendente
+2. Se não houver dados → encerra (`SkipNoNewData`)
+3. Se houver → valida → Glue (passa `--INCOMING_KEYS`) → finaliza (atualiza watermark)
+
+CSV externo:
+
+```powershell
+aws s3 cp lote.csv s3://saldo-previsto-data-prod/incoming/lote.csv
+```
+
+### Modo diário (legacy)
+
+Cron configurado em prod (alternativa):
 
 ```hcl
 eventbridge_schedule_expression = "cron(0 6 * * ? *)"   # 06:00 UTC = 03:00 BRT

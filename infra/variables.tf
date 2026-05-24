@@ -414,6 +414,60 @@ variable "enable_glue_data_catalog" {
   default     = false
 }
 
+variable "ml_metrics_table" {
+  description = "Tabela Athena com histórico de métricas por run."
+  type        = string
+  default     = "tb_metricas_treino"
+}
+
+variable "ml_ingest_daily_simulated" {
+  description = "Append diário de dados simulados antes do treino (Glue)."
+  type        = bool
+  default     = false
+}
+
+variable "ml_incremental_new_clients" {
+  description = "Novos clientes simulados por dia de ingestão."
+  type        = number
+  default     = 10
+}
+
+variable "ml_incremental_seed_clientes" {
+  description = "Clientes no bootstrap quando CSV ainda não existe."
+  type        = number
+  default     = 5000
+}
+
+variable "ml_ingest_mode" {
+  description = "Modo de ingestão simulada: daily ou micro."
+  type        = string
+  default     = "daily"
+}
+
+variable "ml_incremental_step_minutes" {
+  description = "Intervalo em minutos entre lotes no modo micro."
+  type        = number
+  default     = 10
+}
+
+variable "ml_incoming_prefix" {
+  description = "Prefixo S3 para CSVs externos (incoming/)."
+  type        = string
+  default     = "incoming/"
+}
+
+variable "ml_enable_check_new_data" {
+  description = "Step Functions verifica dados novos antes do treino."
+  type        = bool
+  default     = false
+}
+
+variable "glue_max_concurrent_runs" {
+  description = "Máximo de execuções simultâneas do Glue Job."
+  type        = number
+  default     = 1
+}
+
 variable "ml_target_column" {
   description = "Coluna alvo do modelo."
   type        = string

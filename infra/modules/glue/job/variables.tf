@@ -57,6 +57,12 @@ variable "worker_type" {
   default     = "G.1X"
 }
 
+variable "max_concurrent_runs" {
+  description = "Execuções simultâneas máximas do job."
+  type        = number
+  default     = 1
+}
+
 variable "tags" {
   description = "Tags dos recursos."
   type        = map(string)

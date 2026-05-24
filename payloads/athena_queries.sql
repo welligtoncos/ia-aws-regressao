@@ -40,7 +40,19 @@ GROUP BY modelo_versao
 ORDER BY treinado_em;
 
 -- Detalhe amostral
-SELECT cliente_id, saldo_previsto, saldo_real, erro_percentual, modelo_versao
+SELECT cliente_id, saldo_previsto, saldo_real, erro_percentual, modelo_versao, run_id
 FROM saldo_previsto_db_prod.tb_saldo_previsto_prod
 WHERE segmento = 'VAREJO'
 LIMIT 20;
+
+-- Evolução diária do treino (métricas por run)
+SELECT run_date, run_id, total_linhas, linhas_adicionadas,
+       data_referencia_lote,
+       ROUND(rmse, 2) AS rmse,
+       ROUND(mae, 2) AS mae,
+       ROUND(r2, 4) AS r2,
+       ROUND(mape, 4) AS mape,
+       modelo_versao,
+       dt_processamento
+FROM saldo_previsto_db_prod.tb_metricas_treino
+ORDER BY dt_processamento;
